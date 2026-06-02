@@ -1,5 +1,6 @@
 """Application entry point."""
 import logging
+import multiprocessing
 import os
 import sys
 
@@ -15,6 +16,9 @@ from galaxy.ui.main_window import GalaxyWindow
 
 
 def main():
+    if multiprocessing.current_process().name != "MainProcess":
+        return
+
     os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
     os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
     try:

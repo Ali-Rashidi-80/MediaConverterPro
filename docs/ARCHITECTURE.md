@@ -54,7 +54,7 @@ per_job_cpu_threads(...)                   # FFmpeg -threads
 
 | Job kind | Smart slots (typical) |
 |----------|------------------------|
-| Image | min(cpu-1, 6) · ProcessPool |
+| Image | min(cpu-1, 6) · ThreadPool |
 | Audio | min(cpu-1, 4) · ThreadPool |
 | Video GPU | gpu_slots cap |
 | Video CPU | min(cpu-1, 3) |
@@ -73,7 +73,7 @@ per_job_cpu_threads(...)                   # FFmpeg -threads
 
 ### ImageWorker (QThread)
 
-- Sequential یا `ProcessPoolExecutor`
+- Sequential یا `ThreadPoolExecutor` (بدون spawn پردازش جدید — جلوگیری از باز شدن چند پنجره در Windows)
 - Top-level `convert_image_task` (Windows spawn-safe)
 - Module-level output lock
 

@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import pytest
 from galaxy.workers.media_worker import MediaWorker
+from galaxy.workers.task_queue import ConversionTaskQueue
 
 
 def test_build_audio_command(tmp_path, app_settings):
-    worker = MediaWorker([], str(tmp_path), {"format": "mp3"}, mode="audio", app_settings=app_settings)
+    worker = MediaWorker(ConversionTaskQueue([]), str(tmp_path), {"format": "mp3"}, mode="audio", app_settings=app_settings)
     src = tmp_path / "in.wav"
     src.write_bytes(b"RIFF")
     out = tmp_path / "out.mp3"
@@ -17,9 +18,10 @@ def test_build_audio_command(tmp_path, app_settings):
 
 
 def test_stop_sets_not_running(tmp_path, app_settings):
-    worker = MediaWorker([], str(tmp_path), {}, app_settings=app_settings)
+    worker = MediaWorker(ConversionTaskQueue(["x.mp4"]), str(tmp_path), {}, app_settings=app_settings)
     worker.stop()
     assert worker.is_running is False
+    assert worker.queue.is_stopped()
 
 
 @pytest.mark.parametrize("lang,expected_substr", [("en", "Done"), ("fa", "پایان")])

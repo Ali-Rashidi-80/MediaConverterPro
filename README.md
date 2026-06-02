@@ -118,7 +118,7 @@ flowchart TB
     end
 
     subgraph Workers["Workers"]
-        IW[ImageWorker · ProcessPool]
+        IW[ImageWorker · ThreadPool]
         MWk[MediaWorker · ThreadPool]
     end
 

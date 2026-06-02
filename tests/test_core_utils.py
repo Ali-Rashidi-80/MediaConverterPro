@@ -10,6 +10,8 @@ from galaxy.core.utils import (
     ensure_writable_dir,
     file_has_extension,
     format_size,
+    get_desktop_path,
+    get_startupinfo,
     parse_format_extensions,
     resolve_output_path,
 )
@@ -56,3 +58,21 @@ def test_ensure_writable_dir_rejects_file_path():
         assert exc.value.code == "err.output_not_dir"
     finally:
         os.unlink(path)
+
+
+def test_get_startupinfo_on_windows():
+    info = get_startupinfo()
+    if os.name == "nt":
+        assert info is not None
+    else:
+        assert info is None
+
+
+def test_get_desktop_path_returns_existing_dir(monkeypatch, tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    monkeypatch.setattr(
+        "galaxy.core.utils.os.path.expanduser",
+        lambda _: str(tmp_path),
+    )
+    assert get_desktop_path() == str(desktop)

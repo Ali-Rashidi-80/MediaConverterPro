@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from PySide6.QtCore import QThread, Signal
 
@@ -14,6 +14,7 @@ from galaxy.services.ffmpeg import FFmpegEngine, find_ffmpeg_path
 from galaxy.services.ffmpeg_pipeline import PipelineTier, build_video_command, pick_pipeline_tier, tier_label
 from galaxy.services.hw_probe import AccelBackend, get_system_profile
 from galaxy.services.job_scheduler import GlobalGpuSemaphore, JobDescriptor, JobKind, compute_slots, per_job_cpu_threads
+from galaxy.workers.task_queue import ConversionTaskQueue
 from galaxy.workers.worker_i18n import WorkerI18n
 
 _output_locks: dict[str, threading.Lock] = {}
@@ -31,13 +32,14 @@ class MediaWorker(QThread):
     progress_signal = Signal(int)
     log_signal = Signal(str)
     file_status_signal = Signal(str, str)
+    file_started_signal = Signal(str)
     pipeline_signal = Signal(str)
     batch_progress_signal = Signal(int, int)
     finished_all = Signal()
 
-    def __init__(self, tasks, output_dir, settings, mode='video', app_settings=None):
+    def __init__(self, queue: ConversionTaskQueue, output_dir, settings, mode='video', app_settings=None):
         super().__init__()
-        self.tasks = tasks
+        self.queue = queue
         self.output_dir = output_dir
         self.app_settings = app_settings or {}
         self.settings = dict(self.app_settings)
@@ -48,9 +50,12 @@ class MediaWorker(QThread):
         self._proc_lock = threading.Lock()
         self._executor = None
         self._progress_lock = threading.Lock()
-        self._files_done = 0
+        self._tier_lock = threading.Lock()
         self._i18n = WorkerI18n(self.app_settings.get('language', 'fa'))
         self._batch_tier_key = ""
+
+    def append_tasks(self, paths: list[str]) -> list[str]:
+        return self.queue.append(paths)
 
     def _encoder_label(self, profile, settings) -> str:
         if self.mode != 'video':
@@ -95,9 +100,8 @@ class MediaWorker(QThread):
 
     def _resolve_output_path(self, file_path, name, target_fmt):
         save_path = resolve_output_path(self.output_dir, file_path, name, target_fmt)
-        if '_converted.' in os.path.basename(save_path):
-            self.log_signal.emit(self._i18n.t('status.rename_collision'))
-        return save_path
+        collision = '_converted.' in os.path.basename(save_path)
+        return save_path, collision
 
     def _build_command(self, ffmpeg_cmd, file_path, save_path, profile, force_cpu=False, settings=None):
         s = settings if settings is not None else self.settings
@@ -123,15 +127,44 @@ class MediaWorker(QThread):
             if proc in self._active_processes:
                 self._active_processes.remove(proc)
 
-    def _emit_batch_progress(self, total_files: int):
-        with self._progress_lock:
-            self._files_done += 1
-            done = self._files_done
-        pct = int((done / total_files) * 100) if total_files else 0
+    def _emit_batch_progress(self):
+        done = self.queue.completed
+        total = max(1, self.queue.total)
+        pct = int((done / total) * 100)
         self.progress_signal.emit(min(99, pct))
-        self.batch_progress_signal.emit(done, total_files)
+        self.batch_progress_signal.emit(done, total)
 
-    def _run_ffmpeg(self, cmd, duration_sec, file_index, total_files, progress_base=0, progress_span=100):
+    def _finish_file(self, path: str, ok: bool, msg: str, *, rename_collision: bool = False) -> None:
+        if msg == "stopped" and self.queue.is_stopped():
+            self.queue.mark_complete()
+            self._emit_batch_progress()
+            self.file_status_signal.emit(path, "cancelled")
+            return
+        if rename_collision:
+            self.log_signal.emit(self._i18n.t('status.rename_collision'))
+        self.queue.mark_complete()
+        self._emit_batch_progress()
+        if ok:
+            self.file_status_signal.emit(path, "success")
+            self.log_signal.emit(self._i18n.t('status.file_ok', name=msg))
+        else:
+            self.file_status_signal.emit(path, "fail")
+            self.log_signal.emit(self._i18n.t('status.file_fail', name=os.path.basename(path), err=msg))
+
+    def _emit_pipeline_key(self, tier, backend) -> str | None:
+        if self.mode != "video" or not tier:
+            return None
+        with self._tier_lock:
+            if self._batch_tier_key:
+                return None
+            if tier == PipelineTier.CPU or not backend:
+                key = "cpu"
+            else:
+                key = tier_label(tier, backend)
+            self._batch_tier_key = key
+            return key
+
+    def _run_ffmpeg(self, cmd, duration_sec, file_index, total_files, progress_base=0, progress_span=100, *, emit_progress=True):
         proc = subprocess.Popen(
             cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
@@ -162,7 +195,7 @@ class MediaWorker(QThread):
                                 cur_sec = th * 3600 + tm * 60 + ts
                                 frac = min(cur_sec / duration_sec, 1.0)
                                 prog = progress_base + int(frac * progress_span * 0.99)
-                                if prog > last_progress:
+                                if emit_progress and prog > last_progress:
                                     last_progress = prog
                                     self.progress_signal.emit(min(99, prog))
                 except OSError:
@@ -182,23 +215,24 @@ class MediaWorker(QThread):
 
         return returncode, ''.join(stderr_output)
 
-    def _convert_one(self, ffmpeg_cmd, profile, file_path, file_index, total_files, slots):
+    def _convert_one(self, ffmpeg_cmd, profile, file_path, file_index, total_files, slots, emit_progress=True):
         if not self.is_running:
-            return file_path, False, "stopped"
+            return file_path, False, "stopped", None, False
 
         if not os.path.isfile(file_path) or not os.access(file_path, os.R_OK):
-            return file_path, False, "unreadable"
+            return file_path, False, "unreadable", None, False
 
         fname = os.path.basename(file_path)
         name, _ = os.path.splitext(fname)
         target_fmt = self.settings.get('format', 'mp3').lower()
-        save_path = self._resolve_output_path(file_path, name, target_fmt)
+        save_path, rename_collision = self._resolve_output_path(file_path, name, target_fmt)
         lock = _output_lock(save_path)
         duration_sec = self.get_duration(ffmpeg_cmd, file_path)
 
         tier, _ = pick_pipeline_tier(self.settings, profile)
         uses_gpu = self.mode == 'video' and tier in (PipelineTier.TIER1, PipelineTier.TIER2)
         gpu_acquired = False
+        pipeline_key = None
 
         job_settings = dict(self.settings)
         job_settings['cpu_threads'] = per_job_cpu_threads(self.app_settings, slots, profile)
@@ -217,10 +251,7 @@ class MediaWorker(QThread):
                     ffmpeg_cmd, file_path, save_path, profile,
                     force_cpu=not uses_gpu, settings=job_settings,
                 )
-                if tier and backend and not self._batch_tier_key:
-                    key = tier_label(tier, backend)
-                    self._batch_tier_key = key
-                    self.pipeline_signal.emit(key)
+                pipeline_key = self._emit_pipeline_key(tier, backend)
                 logging.info(
                     "Pipeline tier=%s backend=%s file=%s",
                     tier.value if tier else "?",
@@ -230,10 +261,12 @@ class MediaWorker(QThread):
 
                 span = max(1, 100 // total_files)
                 base = int((file_index / total_files) * 100)
-                returncode, stderr_output = self._run_ffmpeg(cmd, duration_sec, file_index, total_files, base, span)
+                returncode, stderr_output = self._run_ffmpeg(
+                    cmd, duration_sec, file_index, total_files, base, span, emit_progress=emit_progress,
+                )
 
                 if returncode == 0 and os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                    return file_path, True, os.path.basename(save_path)
+                    return file_path, True, os.path.basename(save_path), pipeline_key, rename_collision
 
                 if uses_gpu and not cpu_retried:
                     cpu_retried = True
@@ -247,27 +280,28 @@ class MediaWorker(QThread):
                         ffmpeg_cmd, file_path, save_path, profile,
                         force_cpu=True, settings=job_settings,
                     )
-                    self.pipeline_signal.emit("cpu")
-                    self._batch_tier_key = "cpu"
-                    returncode, stderr_output = self._run_ffmpeg(cmd, duration_sec, file_index, total_files, base, span)
+                    cpu_key = self._emit_pipeline_key(tier, backend)
+                    if cpu_key:
+                        pipeline_key = cpu_key
+                    returncode, stderr_output = self._run_ffmpeg(
+                        cmd, duration_sec, file_index, total_files, base, span, emit_progress=emit_progress,
+                    )
                     if returncode == 0 and os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                        return file_path, True, os.path.basename(save_path)
+                        return file_path, True, os.path.basename(save_path), pipeline_key, rename_collision
 
                 err = self._extract_ffmpeg_error(stderr_output)
-                return file_path, False, err[:120]
+                return file_path, False, err[:120], pipeline_key, rename_collision
         except Exception as exc:
-            return file_path, False, str(exc)[:80]
+            return file_path, False, str(exc)[:80], pipeline_key, rename_collision
         finally:
             if gpu_acquired:
                 GlobalGpuSemaphore.release()
 
     def run(self):
-        total_files = len(self.tasks)
-        if total_files == 0:
+        if self.queue.total == 0:
             self.finished_all.emit()
             return
 
-        self._files_done = 0
         self._batch_tier_key = ""
 
         try:
@@ -294,53 +328,67 @@ class MediaWorker(QThread):
             profile = None
 
         kind = JobKind.VIDEO if self.mode == 'video' else JobKind.AUDIO
-        job = JobDescriptor(kind=kind, file_count=total_files, settings=self.settings, profile=profile)
+        job = JobDescriptor(kind=kind, file_count=max(1, self.queue.total), settings=self.settings, profile=profile)
         slots = compute_slots(self.app_settings, job)
-        self.batch_progress_signal.emit(0, total_files)
+        self.batch_progress_signal.emit(0, max(1, self.queue.total))
 
-        if slots <= 1 or total_files <= 1:
-            for i, file_path in enumerate(self.tasks):
-                if not self.is_running:
+        if slots <= 1:
+            while self.is_running and not self.queue.is_stopped():
+                file_path = self.queue.take_next()
+                if file_path is None:
                     break
-                path, ok, msg = self._convert_one(ffmpeg_cmd, profile, file_path, i, total_files, 1)
-                self._emit_batch_progress(total_files)
-                if ok:
-                    self.file_status_signal.emit(path, "success")
-                    self.log_signal.emit(self._i18n.t('status.file_ok', name=msg))
-                else:
-                    self.file_status_signal.emit(path, "fail")
-                    self.log_signal.emit(self._i18n.t('status.file_fail', name=os.path.basename(path), err=msg))
+                self.file_started_signal.emit(file_path)
+                idx = self.queue.completed
+                path, ok, msg, pipeline_key, rename_collision = self._convert_one(
+                    ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), 1, emit_progress=True,
+                )
+                if pipeline_key:
+                    self.pipeline_signal.emit(pipeline_key)
+                self._finish_file(path, ok, msg, rename_collision=rename_collision)
         else:
             self.log_signal.emit(self._i18n.t('status.parallel', n=slots))
             pool = ThreadPoolExecutor(max_workers=slots)
             self._executor = pool
+            active_futures: dict = {}
             try:
-                futures = {
-                    pool.submit(self._convert_one, ffmpeg_cmd, profile, fp, i, total_files, slots): (i, fp)
-                    for i, fp in enumerate(self.tasks)
-                }
-                for fut in as_completed(futures):
-                    if not self.is_running:
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        break
-                    i, fp = futures[fut]
-                    try:
-                        path, ok, msg = fut.result()
-                    except Exception as exc:
-                        path, ok, msg = fp, False, str(exc)[:80]
-                    self._emit_batch_progress(total_files)
-                    if ok:
-                        self.file_status_signal.emit(path, "success")
-                        self.log_signal.emit(self._i18n.t('status.file_ok', name=msg))
-                    else:
-                        self.file_status_signal.emit(path, "fail")
-                        self.log_signal.emit(self._i18n.t('status.file_fail', name=os.path.basename(path), err=msg))
+                while self.is_running and not self.queue.is_stopped():
+                    while len(active_futures) < slots:
+                        file_path = self.queue.take_next()
+                        if file_path is None:
+                            break
+                        self.file_started_signal.emit(file_path)
+                        idx = self.queue.completed + len(active_futures)
+                        fut = pool.submit(
+                            self._convert_one,
+                            ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), slots, False,
+                        )
+                        active_futures[fut] = file_path
+
+                    if not active_futures:
+                        if self.queue.pending_count() == 0:
+                            break
+                        self.msleep(50)
+                        continue
+
+                    done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED, timeout=0.3)
+                    for fut in done:
+                        fp = active_futures.pop(fut)
+                        try:
+                            path, ok, msg, pipeline_key, rename_collision = fut.result()
+                        except Exception as exc:
+                            if self.queue.is_stopped():
+                                path, ok, msg, pipeline_key, rename_collision = fp, False, "stopped", None, False
+                            else:
+                                path, ok, msg, pipeline_key, rename_collision = fp, False, str(exc)[:80], None, False
+                        if pipeline_key:
+                            self.pipeline_signal.emit(pipeline_key)
+                        self._finish_file(path, ok, msg, rename_collision=rename_collision)
             finally:
                 self._executor = None
                 pool.shutdown(wait=False, cancel_futures=True)
 
         self.progress_signal.emit(100)
-        self.batch_progress_signal.emit(total_files, total_files)
+        self.batch_progress_signal.emit(self.queue.completed, max(1, self.queue.total))
         self.finished_all.emit()
 
     def _terminate_process(self, proc=None):
@@ -365,6 +413,7 @@ class MediaWorker(QThread):
 
     def stop(self):
         self.is_running = False
+        self.queue.request_stop()
         self._terminate_process()
         if self._executor:
             try:

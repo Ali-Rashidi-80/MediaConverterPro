@@ -43,6 +43,7 @@ a = Analysis(
         'galaxy.workers.image_task',
         'galaxy.workers.media_worker',
         'galaxy.workers.worker_i18n',
+        'galaxy.workers.task_queue',
         'galaxy.ui.layout_direction',
         'galaxy.ui.theme',
         'galaxy.ui.help_content',

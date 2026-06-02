@@ -1,4 +1,6 @@
 """Galaxy Media Pro — backward-compatible entry point for PyInstaller and scripts."""
+import multiprocessing
+
 from galaxy import APP_NAME, APP_VERSION, GalaxyWindow, main
 from galaxy.core.constants import AUDIO_CONTAINER_EXT, HEIF_SUPPORTED
 from galaxy.core.exceptions import (
@@ -78,4 +80,5 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

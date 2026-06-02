@@ -1,4 +1,4 @@
-"""Top-level image conversion task for ProcessPoolExecutor (Windows-safe)."""
+"""Top-level image conversion task (thread-safe via per-path locks)."""
 from __future__ import annotations
 
 import logging

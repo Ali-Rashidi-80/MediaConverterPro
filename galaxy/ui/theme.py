@@ -212,10 +212,13 @@ QPushButton#PrimaryBtn:disabled {{ background: {p['border']}; color: {p['text_mu
 
 QPushButton#DangerBtn {{
     background: rgba(255,82,82,0.10); color: {p['danger']};
-    border: 1px solid rgba(255,82,82,0.35);
+    border: 1px solid rgba(255,82,82,0.35); font-weight: 700;
 }}
-QPushButton#DangerBtn:hover {{ background: {p['danger']}; color: #fff; border-color: {p['danger']}; }}
-QPushButton#DangerBtn:disabled {{ background: {p['bg_alt']}; color: {p['text_muted']}; border-color: {p['border_soft']}; }}
+QPushButton#DangerBtn:enabled {{
+    background: {p['danger']}; color: #fff; border-color: {p['danger']};
+}}
+QPushButton#DangerBtn:hover {{ background: #ff1744; color: #fff; border-color: #ff1744; }}
+QPushButton#DangerBtn:disabled {{ background: {p['bg_alt']}; color: {p['text_muted']}; border-color: {p['border_soft']}; font-weight: 600; }}
 
 QPushButton#GhostBtn {{
     background: transparent; border: 1px dashed {p['border']}; color: {p['text_secondary']};

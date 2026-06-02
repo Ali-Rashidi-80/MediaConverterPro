@@ -1,4 +1,4 @@
-"""ImageWorker parallel path with mocked ProcessPoolExecutor."""
+"""ImageWorker parallel path with mocked ThreadPoolExecutor."""
 from __future__ import annotations
 
 import shutil
@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from galaxy.workers.image_worker import ImageWorker
+from galaxy.workers.task_queue import ConversionTaskQueue
 
 
 class _DoneFuture:
@@ -28,22 +29,27 @@ def test_image_worker_parallel_pool(qtbot, sample_jpg, temp_output, app_settings
     shutil.copy(sample_jpg, img2)
 
     worker = ImageWorker(
-        [str(sample_jpg), str(img2)],
+        ConversionTaskQueue([str(sample_jpg), str(img2)]),
         str(temp_output),
         {"format": "png"},
         app_settings,
     )
 
-    f1 = _DoneFuture((str(sample_jpg), True, "a.png"))
-    f2 = _DoneFuture((str(img2), True, "b.png"))
     mock_pool = MagicMock()
-    mock_pool.submit.side_effect = [f1, f2]
 
-    def fake_as_completed(futures_dict):
-        return list(futures_dict.keys())
+    def submit(fn, *args):
+        return _DoneFuture(fn(*args))
 
-    with patch("galaxy.workers.image_worker.ProcessPoolExecutor", return_value=mock_pool):
-        with patch("galaxy.workers.image_worker.as_completed", fake_as_completed):
+    mock_pool.submit.side_effect = submit
+
+    def fake_wait(futures, **kwargs):
+        if not futures:
+            return (set(), set())
+        fut = next(iter(futures))
+        return ({fut}, set())
+
+    with patch("galaxy.workers.image_worker.ThreadPoolExecutor", return_value=mock_pool):
+        with patch("galaxy.workers.image_worker.wait", side_effect=fake_wait):
             statuses = []
             worker.file_status_signal.connect(lambda p, s: statuses.append(s))
             with qtbot.waitSignal(worker.finished_all, timeout=10000):

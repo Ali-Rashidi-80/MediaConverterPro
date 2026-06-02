@@ -5,6 +5,7 @@ import pytest
 from galaxy.services.ffmpeg_pipeline import PipelineTier
 from galaxy.services.hw_probe import AccelBackend, BackendCaps, SystemProfile
 from galaxy.workers.media_worker import MediaWorker
+from galaxy.workers.task_queue import ConversionTaskQueue
 
 
 def _nvidia_profile() -> SystemProfile:
@@ -16,7 +17,7 @@ def _nvidia_profile() -> SystemProfile:
 @pytest.fixture
 def worker(tmp_path):
     return MediaWorker(
-        tasks=[],
+        ConversionTaskQueue([]),
         output_dir=str(tmp_path),
         settings={"format": "mp4", "accel_mode": "nvidia", "nvenc_preset": "p4"},
         mode="video",
@@ -46,7 +47,7 @@ def test_encoder_label_nvenc(worker):
 
 
 def test_encoder_label_cpu_for_audio(tmp_path):
-    w = MediaWorker([], str(tmp_path), {}, mode="audio", app_settings={"language": "en"})
+    w = MediaWorker(ConversionTaskQueue([]), str(tmp_path), {}, mode="audio", app_settings={"language": "en"})
     assert w._encoder_label(None, {}) == "CPU"
 
 
@@ -65,7 +66,7 @@ def test_build_command_video_includes_ffmpeg_and_output(worker, tmp_path):
 
 
 def test_emit_batch_progress_monotonic(worker):
-    worker._files_done = 0
+    worker.queue = ConversionTaskQueue(["a", "b", "c", "d"])
     seen = []
 
     def capture(val):
@@ -73,8 +74,10 @@ def test_emit_batch_progress_monotonic(worker):
 
     worker.progress_signal.connect(capture)
     worker.batch_progress_signal.connect(lambda d, t: None)
-    worker._emit_batch_progress(4)
-    worker._emit_batch_progress(4)
+    worker.queue.mark_complete()
+    worker._emit_batch_progress()
+    worker.queue.mark_complete()
+    worker._emit_batch_progress()
     assert len(seen) == 2
     assert seen[1] > seen[0]
     assert seen[-1] <= 99
@@ -88,7 +91,7 @@ def test_gpu_fallback_releases_semaphore_before_cpu_retry(worker, tmp_path, monk
     profile = _nvidia_profile()
     src = tmp_path / "clip.mp4"
     src.write_bytes(b"\x00")
-    worker.tasks = [str(src)]
+    worker.queue = ConversionTaskQueue([str(src)])
     worker.settings.update({"format": "mp4", "video_preset": "youtube", "accel_mode": "nvidia"})
 
     acquire_count = 0
@@ -113,7 +116,7 @@ def test_gpu_fallback_releases_semaphore_before_cpu_retry(worker, tmp_path, monk
 
     calls = {"gpu": 0, "cpu": 0}
 
-    def fake_run(cmd, duration_sec, file_index, total_files, progress_base=0, progress_span=100):
+    def fake_run(cmd, duration_sec, file_index, total_files, progress_base=0, progress_span=100, *, emit_progress=True):
         if "nvenc" in " ".join(cmd):
             calls["gpu"] += 1
             return 1, "Error: nvenc failed"
@@ -125,8 +128,38 @@ def test_gpu_fallback_releases_semaphore_before_cpu_retry(worker, tmp_path, monk
 
     monkeypatch.setattr(worker, "_run_ffmpeg", fake_run)
 
-    path, ok, msg = worker._convert_one("ffmpeg.exe", profile, str(src), 0, 1, 1)
+    path, ok, msg, _, _ = worker._convert_one("ffmpeg.exe", profile, str(src), 0, 1, 1)
     assert ok, msg
     assert calls["gpu"] == 1 and calls["cpu"] == 1
     assert acquire_count == 1
     assert release_count >= 1
+
+
+def test_gpu_fallback_log_even_when_emit_progress_false(worker, tmp_path, monkeypatch):
+    """Parallel mode disables progress emits but must still log GPU fallback."""
+    from galaxy.services.job_scheduler import GlobalGpuSemaphore
+
+    GlobalGpuSemaphore.configure(1)
+    profile = _nvidia_profile()
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"\x00")
+    worker.queue = ConversionTaskQueue([str(src)])
+    worker.settings.update({"format": "mp4", "video_preset": "youtube", "accel_mode": "nvidia"})
+    monkeypatch.setattr(worker, "get_duration", lambda *_: 10.0)
+
+    logs = []
+    worker.log_signal.connect(logs.append)
+
+    def fake_run(cmd, duration_sec, file_index, total_files, progress_base=0, progress_span=100, *, emit_progress=True):
+        if "nvenc" in " ".join(cmd):
+            return 1, "Error: nvenc failed"
+        out_path = cmd[-1]
+        with open(out_path, "wb") as fh:
+            fh.write(b"ok")
+        return 0, ""
+
+    monkeypatch.setattr(worker, "_run_ffmpeg", fake_run)
+
+    path, ok, msg, _, _ = worker._convert_one("ffmpeg.exe", profile, str(src), 0, 1, 2, emit_progress=False)
+    assert ok, msg
+    assert logs and any("GPU" in line for line in logs)

@@ -40,7 +40,18 @@ def test_nav_sidebar_selects_pages(qtbot, galaxy_window):
 
 
 @pytest.mark.ui
-def test_form_combo_strong_focus(qtbot):
+def test_stop_button_visible_when_converting(qtbot, galaxy_window):
+    galaxy_window.show()
+    galaxy_window.stack.setCurrentIndex(0)
+    qtbot.wait(50)
+    page: ImagePage = galaxy_window.stack.widget(0)
+    page.file_paths.append("dummy.jpg")
+    page._conversion_running = True
+    page._sync_action_buttons()
+    qtbot.wait(20)
+    assert page.btn_stop.isVisible()
+    assert page.btn_stop.isEnabled()
+    assert not page.btn_run.isEnabled()
     from galaxy.ui.widgets import FormComboBox
 
     combo = FormComboBox()

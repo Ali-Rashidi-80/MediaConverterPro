@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from galaxy.core.exceptions import OutputDirError
 from galaxy.core.utils import (
     ensure_writable_dir,
     file_has_extension,
@@ -40,6 +41,7 @@ from galaxy.ui.widgets import (
 )
 from galaxy.workers.image_worker import ImageWorker
 from galaxy.workers.media_worker import MediaWorker
+from galaxy.workers.task_queue import ConversionTaskQueue
 
 
 class BasePage(QWidget):
@@ -62,6 +64,10 @@ class BasePage(QWidget):
         self.page_title = title
         self.worker = None
         self.file_paths = []
+        self._user_stopped = False
+        self._stop_pending = False
+        self._conversion_running = False
+        self._task_queue = None
         self._form_rows = []
         self._footer_tier_key = ""
         self._footer_encoder = "CPU"
@@ -170,13 +176,15 @@ class BasePage(QWidget):
         self.btn_stop = QPushButton()
         self.btn_stop.setObjectName("DangerBtn")
         self.btn_stop.setMinimumHeight(52)
-        self.btn_stop.setVisible(False)
+        self.btn_stop.setMinimumWidth(140)
+        self.btn_stop.setVisible(True)
+        self.btn_stop.setEnabled(False)
         self.btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_stop.clicked.connect(self.stop_process)
 
         h_run = QHBoxLayout()
         h_run.setSpacing(10)
-        h_run.addWidget(self.btn_run, 1)
+        h_run.addWidget(self.btn_run, 2)
         h_run.addWidget(self.btn_stop, 1)
 
         action_lay.addWidget(self.lbl_local_status)
@@ -192,9 +200,41 @@ class BasePage(QWidget):
         self._sync_action_buttons()
 
     def _on_drop_zone_click(self):
-        if self.worker and self.worker.isRunning():
-            return
         self.add_files(self.formats)
+
+    def _is_converting(self) -> bool:
+        if self._conversion_running:
+            return True
+        return bool(self.worker and self.worker.isRunning())
+
+    def _row_status_key(self, row: int) -> str:
+        item = self.table_widget.item(row, 3)
+        if not item:
+            return "pending"
+        key = item.data(Qt.ItemDataRole.UserRole)
+        return key if isinstance(key, str) else "pending"
+
+    def _set_row_status(self, row: int, key: str) -> None:
+        labels = {
+            "pending": ("table.pending", "text_muted"),
+            "queued": ("table.queued", "text_muted"),
+            "working": ("table.working", "warning"),
+            "success": ("table.success", "success"),
+            "fail": ("table.fail", "danger"),
+            "cancelled": ("table.cancelled", "text_muted"),
+        }
+        label_key, color_key = labels.get(key, labels["pending"])
+        item = QTableWidgetItem(self.tr(label_key))
+        item.setData(Qt.ItemDataRole.UserRole, key)
+        item.setForeground(self._theme_color(color_key))
+        self.table_widget.setItem(row, 3, item)
+
+    def _mark_file_working(self, path: str) -> None:
+        try:
+            row = self.file_paths.index(path)
+            self._set_row_status(row, "working")
+        except ValueError:
+            pass
 
     def _advanced_enabled(self):
         grp = getattr(self, 'advanced_group', None)
@@ -205,20 +245,25 @@ class BasePage(QWidget):
         return grp.isChecked()
 
     def _sync_action_buttons(self):
-        running = bool(self.worker and self.worker.isRunning())
+        running = self._is_converting()
         has_files = bool(self.file_paths)
+        self.btn_run.setVisible(True)
+        self.btn_stop.setVisible(True)
         if running:
-            self.btn_run.setVisible(False)
-            self.btn_stop.setVisible(True)
-            self.btn_stop.setEnabled(True)
+            self.btn_run.setEnabled(False)
+            self.btn_run.setText(self.tr('status.converting'))
+            set_tip(self.btn_run, self.tr('status.converting'))
+            self.btn_stop.setEnabled(not self._stop_pending)
+            set_tip(self.btn_stop, self.tr('btn.stop_tip'))
         else:
-            self.btn_run.setVisible(True)
-            self.btn_stop.setVisible(False)
             self.btn_run.setEnabled(has_files)
+            self.btn_run.setText(self.tr('btn.start'))
+            self.btn_stop.setEnabled(False)
             if has_files:
                 set_tip(self.btn_run, self.tr('btn.start_tip'))
             else:
                 set_tip(self.btn_run, self.tr('btn.start_disabled_tip'))
+            set_tip(self.btn_stop, self.tr('btn.stop_tip'))
 
     def retranslate_ui(self):
         pid = getattr(self, 'PAGE_ID', 'image')
@@ -335,7 +380,8 @@ class BasePage(QWidget):
                 self.lbl_local_status.setText(self.tr('status.no_folder'))
 
     def process_new_files(self, files):
-        added = 0
+        added_paths: list[str] = []
+        converting = self._is_converting()
         for f in files:
             if f not in self.file_paths:
                 row = self.table_widget.rowCount()
@@ -343,8 +389,10 @@ class BasePage(QWidget):
                 name_item = QTableWidgetItem(os.path.basename(f))
                 name_item.setToolTip(f)
                 self.table_widget.setItem(row, 0, name_item)
-                try: size_str = format_size(os.path.getsize(f))
-                except OSError: size_str = "Unknown"
+                try:
+                    size_str = format_size(os.path.getsize(f))
+                except OSError:
+                    size_str = "Unknown"
                 size_item = QTableWidgetItem(size_str)
                 fk = getattr(self.parent_window, 'settings', {}).get('font_size', 'medium')
                 size_item.setFont(make_mono_qfont(fk))
@@ -352,17 +400,21 @@ class BasePage(QWidget):
                 try:
                     mtime = os.path.getmtime(f)
                     date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
-                except OSError: date_str = "-"
+                except OSError:
+                    date_str = "-"
                 self.table_widget.setItem(row, 2, QTableWidgetItem(date_str))
 
-                status_item = QTableWidgetItem(self.tr('table.pending'))
-                status_item.setForeground(self._theme_color('text_muted'))
-                self.table_widget.setItem(row, 3, status_item)
+                status_key = "queued" if converting else "pending"
+                self._set_row_status(row, status_key)
 
                 self.file_paths.append(f)
-                added += 1
-        if added:
-            self.lbl_local_status.setText(self.tr('status.added', added=added, total=len(self.file_paths)))
+                added_paths.append(f)
+        if added_paths:
+            if converting and self.worker and hasattr(self.worker, 'append_tasks'):
+                self.worker.append_tasks(added_paths)
+                self.lbl_local_status.setText(self.tr('status.added_running', added=len(added_paths), total=len(self.file_paths)))
+            else:
+                self.lbl_local_status.setText(self.tr('status.added', added=len(added_paths), total=len(self.file_paths)))
         self._refresh_stats()
 
     def show_context_menu(self, pos):
@@ -379,12 +431,21 @@ class BasePage(QWidget):
 
     def remove_selected(self):
         rows = sorted(set(index.row() for index in self.table_widget.selectedIndexes()), reverse=True)
+        blocked = 0
         for row in rows:
+            if self._row_status_key(row) == "working":
+                blocked += 1
+                continue
             self.file_paths.pop(row)
             self.table_widget.removeRow(row)
+        if blocked:
+            self.lbl_local_status.setText(self.tr('status.cannot_remove_working', n=blocked))
         self._refresh_stats()
 
     def clear_list(self):
+        if self._is_converting():
+            self.lbl_local_status.setText(self.tr('status.cannot_clear_running'))
+            return
         self.table_widget.setRowCount(0)
         self.file_paths = []
         self.progress_bar.setValue(0)
@@ -453,6 +514,11 @@ class BasePage(QWidget):
                 signal.disconnect(slot)
             except (RuntimeError, TypeError):
                 pass
+        if hasattr(self.worker, 'file_started_signal'):
+            try:
+                self.worker.file_started_signal.disconnect(self._mark_file_working)
+            except (RuntimeError, TypeError):
+                pass
 
     def start_process(self):
         if self.worker and self.worker.isRunning():
@@ -467,6 +533,9 @@ class BasePage(QWidget):
 
         try:
             ensure_writable_dir(self.parent_window.output_dir)
+        except OutputDirError as e:
+            self.show_msg(self.tr('dlg.output_err'), self.tr(e.code, path=e.path), QMessageBox.Icon.Critical)
+            return
         except OSError as e:
             self.show_msg(self.tr('dlg.output_err'), str(e), QMessageBox.Icon.Critical)
             return
@@ -476,20 +545,27 @@ class BasePage(QWidget):
         self.progress_bar.setValue(0)
         self._success_count = 0
         self._fail_count = 0
+        self._user_stopped = False
+        self._stop_pending = False
+        self._conversion_running = True
 
-        for i in range(self.table_widget.rowCount()):
-            item = QTableWidgetItem(self.tr('table.working'))
-            item.setForeground(self._theme_color('warning'))
-            self.table_widget.setItem(i, 3, item)
+        run_paths: list[str] = []
+        for i, path in enumerate(self.file_paths):
+            if self._row_status_key(i) != "success":
+                run_paths.append(path)
+                self._set_row_status(i, "working")
+        if not run_paths:
+            self.show_msg(self.tr('dlg.no_files'), self.tr('dlg.no_work_left'), QMessageBox.Icon.Information)
+            return
 
-        tasks_copy = list(self.file_paths)
         self._disconnect_worker()
+        self._task_queue = ConversionTaskQueue(run_paths)
 
         if self.PAGE_ID == 'image':
-            self.worker = ImageWorker(tasks_copy, out_dir, settings, self.parent_window.settings)
+            self.worker = ImageWorker(self._task_queue, out_dir, settings, self.parent_window.settings)
         else:
             mode = 'audio' if self.PAGE_ID == 'audio' else 'video'
-            self.worker = MediaWorker(tasks_copy, out_dir, settings, mode, self.parent_window.settings)
+            self.worker = MediaWorker(self._task_queue, out_dir, settings, mode, self.parent_window.settings)
 
         self._batch_done = 0
         self._footer_tier_key = ""
@@ -505,6 +581,7 @@ class BasePage(QWidget):
         self.worker.log_signal.connect(self.update_local_log)
         self.worker.file_status_signal.connect(self.update_file_status)
         self.worker.file_status_signal.connect(self._track_file_result)
+        self.worker.file_started_signal.connect(self._mark_file_working)
         self.worker.finished_all.connect(self.on_finished)
         if hasattr(self.worker, 'pipeline_signal'):
             self.worker.pipeline_signal.connect(self._on_pipeline_update)
@@ -516,7 +593,7 @@ class BasePage(QWidget):
                 active=True,
                 encoder_label=self._footer_encoder,
                 done=0,
-                total=len(tasks_copy),
+                total=len(run_paths),
                 tier_key='cpu',
             )
 
@@ -524,27 +601,40 @@ class BasePage(QWidget):
         self._sync_action_buttons()
         self.lbl_local_status.setText(self.tr('status.converting'))
         self.worker.start()
-
-    def stop_process(self):
-        if self.worker and self.worker.isRunning():
-            self.worker.stop()
-            if not self.worker.wait(5000):
-                self.lbl_local_status.setText(self.tr('status.stop_wait'))
-                return
-            self.lbl_local_status.setText(self.tr('status.stopped'))
-        self.toggle_inputs(True)
         self._sync_action_buttons()
 
+    def stop_process(self):
+        if not self._is_converting():
+            return
+        self._user_stopped = True
+        self._stop_pending = True
+        self.lbl_local_status.setText(self.tr('status.stop_wait'))
+        self._sync_action_buttons()
+        self.worker.stop()
+
+    def _mark_cancelled_rows(self) -> None:
+        for i in range(self.table_widget.rowCount()):
+            if self._row_status_key(i) in ("working", "queued", "pending"):
+                self._set_row_status(i, "cancelled")
+
     def toggle_inputs(self, enable):
-        self.btn_add.setEnabled(enable)
-        self.btn_folder.setEnabled(enable)
-        self.btn_clear.setEnabled(enable)
-        self.btn_reset.setEnabled(enable)
-        self.setAcceptDrops(enable)
-        self.drop_zone.set_interactive(enable)
-        self.settings_group.setEnabled(enable)
+        converting = self._is_converting()
+        file_ops = enable or converting
+        self.btn_add.setEnabled(file_ops)
+        self.btn_folder.setEnabled(file_ops)
+        self.btn_clear.setEnabled(file_ops)
+        self.btn_reset.setEnabled(enable and not converting)
+        self.setAcceptDrops(file_ops)
+        self.drop_zone.set_interactive(file_ops)
+        self.settings_group.setEnabled(enable and not converting)
         if hasattr(self, 'advanced_group'):
-            self.advanced_group.setEnabled(enable)
+            self.advanced_group.setEnabled(enable and not converting)
+        if converting:
+            set_tip(self.btn_add, self.tr('tip.add_while_running'))
+            set_tip(self.btn_folder, self.tr('tip.add_while_running'))
+        else:
+            set_tip(self.btn_add, self.tr('btn.select_files_tip'))
+            set_tip(self.btn_folder, self.tr('btn.select_folder_tip'))
         self._sync_action_buttons()
 
     def update_local_log(self, msg): self.lbl_local_status.setText(msg)
@@ -552,32 +642,38 @@ class BasePage(QWidget):
     def _track_file_result(self, path, status):
         if status == "success":
             self._success_count += 1
-        else:
+        elif status not in ("cancelled",):
             self._fail_count += 1
 
     def update_file_status(self, path, status):
         try:
             row = self.file_paths.index(path)
-            theme = getattr(self.parent_window, 'settings', {}).get('theme', 'dark_cyan')
-            p = _pal(theme)
-            item = QTableWidgetItem()
             if status == "success":
-                item.setText(self.tr('table.success'))
-                item.setForeground(QColor(p['success']))
+                self._set_row_status(row, "success")
+            elif status == "cancelled":
+                self._set_row_status(row, "cancelled")
             else:
-                item.setText(self.tr('table.fail'))
-                item.setForeground(QColor(p['danger']))
-            self.table_widget.setItem(row, 3, item)
+                self._set_row_status(row, "fail")
         except ValueError:
             pass
 
     def on_finished(self):
+        stopped = self._user_stopped
+        self._conversion_running = False
+        self._stop_pending = False
+        if stopped:
+            self._mark_cancelled_rows()
         self.toggle_inputs(True)
         self._sync_action_buttons()
         if self.parent_window and hasattr(self.parent_window, 'set_conversion_badge'):
             self.parent_window.set_conversion_badge(active=False)
         if hasattr(self, 'update_pipeline_hint'):
             self.update_pipeline_hint()
+        if stopped:
+            self._user_stopped = False
+            self.lbl_local_status.setText(self.tr('status.stopped'))
+            self._sync_action_buttons()
+            return
         success = getattr(self, '_success_count', 0)
         failed = getattr(self, '_fail_count', 0)
         if failed == 0 and success > 0:
@@ -596,6 +692,7 @@ class BasePage(QWidget):
             self.lbl_local_status.setText(self.tr('status.mixed', ok=success, fail=failed))
             summary = self.tr('dlg.summary_mixed', ok=success, fail=failed)
             icon = QMessageBox.Icon.Warning
+        self._sync_action_buttons()
         msg = QMessageBox(self)
         msg.setWindowTitle(self.tr('dlg.done_title'))
         msg.setText(summary)

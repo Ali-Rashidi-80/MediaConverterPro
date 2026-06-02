@@ -21,7 +21,7 @@ python galaxy_ultimate.py
 | Entry | `galaxy_ultimate.py` — PyInstaller target |
 | Package | `galaxy/` — همه منطق اپ |
 | i18n | کلید در `galaxy_i18n.py` — **هر دو FA+EN** |
-| Workers | بدون import Qt در `image_task.py` (ProcessPool) |
+| Workers | بدون import Qt در `image_task.py` (ThreadPool برای تصویر) |
 | Settings | `PERF_DEFAULTS` + `SettingsManager` |
 | UI combo | `FormComboBox` + `fill_combo_keys` |
 

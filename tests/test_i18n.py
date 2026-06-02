@@ -83,3 +83,26 @@ def test_i18n_format_interpolation():
     fa = I18n("fa")
     out = fa.t("status.file_ok", name="test.mp4")
     assert "test.mp4" in out
+
+
+def test_i18n_rtl_and_set_lang():
+    i18n = I18n("en")
+    assert i18n.is_rtl() is False
+    i18n.set_lang("fa")
+    assert i18n.is_rtl() is True
+    assert i18n.lang == "fa"
+
+
+def test_fill_combo_helpers(qapp):
+    from galaxy_i18n import I18n, fill_combo_keys, fill_combo_texts
+    from PySide6.QtWidgets import QComboBox
+
+    combo = QComboBox()
+    i18n = I18n("fa")
+    fill_combo_keys(combo, ["auto", "sequential"], i18n, prefix="value", default_key="auto")
+    assert combo.count() == 2
+    assert combo.itemData(0) == "auto"
+
+    combo2 = QComboBox()
+    fill_combo_texts(combo2, ["A", "B"], current_text="B")
+    assert combo2.currentText() == "B"
