@@ -1,0 +1,36 @@
+Galaxy Media Pro — License Notice
+===================================
+
+Copyright (c) 2026 Ali Rashidi (@a_ra_80)
+Write Your Way — https://t.me/writeyourway
+
+Application source code, UI design, and documentation in this repository
+(excluding third-party components listed below) are proprietary to the
+author unless otherwise stated. All rights reserved.
+
+You may run, build, and use this software for personal or internal
+purposes as provided in the project documentation. Redistribution,
+commercial sublicensing, or modification for public release requires
+explicit permission from the author.
+
+Third-party components
+----------------------
+
+FFmpeg (bundled or external)
+  Licensed under the GNU General Public License (GPL).
+  Source builds: https://www.gyan.dev/ffmpeg/builds/
+                  https://github.com/BtbN/FFmpeg-Builds
+  When distributing binaries that include FFmpeg, comply with GPL
+  obligations (source offer, license text, etc.).
+
+PySide6 / Qt
+  Licensed under LGPL or commercial Qt terms — see Qt documentation.
+
+Pillow, pillow-heif, and other Python dependencies
+  See each package's license on PyPI.
+
+Contact
+-------
+
+Ali Rashidi — Telegram: @a_ra_80
+Channel: @writeyourway

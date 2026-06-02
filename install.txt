@@ -1,0 +1,19 @@
+Galaxy Media Pro 3.0 — Quick install pointer
+=================================================
+
+Full documentation moved to:
+
+  README.md           — overview & quick start
+  docs/INSTALL.md     — complete install & build guide
+  docs/INDEX.md       — all documentation
+
+Quick run:
+  pip install -r requirements.txt
+  python galaxy_ultimate.py
+
+Portable build:
+  build_portable.bat  →  dist\GalaxyConverter_Portable.exe
+
+QA:
+  pip install -r requirements-dev.txt
+  python tools/qa_full.py --full

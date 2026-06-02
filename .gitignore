@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.spec.bak
+
+# QA / tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.cursor/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Local user settings (runtime — not project config)
+.galaxy_converter/
+
+# Large FFmpeg binaries (local / CI via tools/bootstrap_ffmpeg.py)
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+
+# Legacy Phase 5 snapshot (~700MB) — see archive/README.md
+archive/legacy-phase5/
+
+# PyInstaller / logs
+*.log
+
+# Optional local FFmpeg downloads (keep root ffmpeg.exe if tracked)
+tools/upx/
+tools/upx.zip
+tools/upx_tmp/

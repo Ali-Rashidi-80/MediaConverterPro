@@ -1,0 +1,46 @@
+[project]
+name = "galaxy-media-pro"
+version = "3.0.0"
+requires-python = ">=3.11"
+description = "Galaxy Media Pro — bilingual image, video & audio converter with GPU acceleration"
+authors = [{ name = "Ali Rashidi" }]
+readme = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --tb=short"
+filterwarnings = ["ignore::DeprecationWarning"]
+qt_api = "pyside6"
+markers = [
+    "integration: real FFmpeg encode/probe (slow)",
+    "ui: Qt widget tests (pytest-qt)",
+    "gpu: GPU-specific expectations",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["galaxy", "galaxy_i18n.py", "galaxy_fonts.py", "galaxy_ultimate.py", "tools", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501", "E702", "UP022", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+"galaxy/core/exceptions.py" = ["E701"]
+"galaxy/core/utils.py" = ["E701"]
+"galaxy/ui/base_page.py" = ["E701"]
+"tests/conftest.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_ignores = true
+ignore_missing_imports = true
+check_untyped_defs = false
+exclude = ["archive", "build", "dist"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "archive", "build", "dist"]
+skips = ["B404", "B603", "B607", "B110", "B112", "B310"]
