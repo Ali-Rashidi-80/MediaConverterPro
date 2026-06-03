@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from galaxy_i18n import STRINGS, I18n
 
+UI_STATUS_KEYS = (
+    "status.prev_worker_busy",
+    "status.cannot_clear_running",
+)
+
 WORKER_KEYS = (
     "status.file_ok",
     "status.file_fail",
@@ -64,6 +69,12 @@ def test_fa_en_key_parity():
     missing_fa = en_keys - fa_keys
     assert not missing_en, f"Missing in EN: {sorted(missing_en)[:10]}"
     assert not missing_fa, f"Missing in FA: {sorted(missing_fa)[:10]}"
+
+
+def test_ui_status_keys_present_both_langs():
+    for key in UI_STATUS_KEYS:
+        for lang in ("fa", "en"):
+            assert key in STRINGS[lang]
 
 
 def test_worker_keys_present_both_langs():

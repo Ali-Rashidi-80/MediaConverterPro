@@ -31,3 +31,20 @@ def test_mark_complete_increments():
     q.mark_complete()
     assert q.completed == 1
     assert q.total == 2
+
+
+def test_discard_pending():
+    q = ConversionTaskQueue(["a", "b", "c"])
+    assert q.discard_pending("b") is True
+    assert q.total == 2
+    assert q.take_next() == "a"
+    assert q.take_next() == "c"
+    assert q.discard_pending("missing") is False
+
+
+def test_discard_pending_keeps_total_above_completed():
+    q = ConversionTaskQueue(["a", "b"])
+    q.mark_complete()
+    assert q.discard_pending("b") is True
+    assert q.total == 1
+    assert q.completed == 1

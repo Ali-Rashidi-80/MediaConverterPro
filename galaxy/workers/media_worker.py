@@ -298,98 +298,98 @@ class MediaWorker(QThread):
                 GlobalGpuSemaphore.release()
 
     def run(self):
-        if self.queue.total == 0:
-            self.finished_all.emit()
-            return
-
-        self._batch_tier_key = ""
-
         try:
-            ffmpeg_cmd = self.get_ffmpeg_path()
-        except FFmpegNotFoundError:
-            self.log_signal.emit(self._i18n.t('status.ffmpeg_missing'))
-            self.finished_all.emit()
-            return
+            if self.queue.total == 0:
+                return
 
-        try:
-            ensure_writable_dir(self.output_dir)
-        except OutputDirError as e:
-            self.log_signal.emit(self._i18n.t(e.code, path=e.path))
-            self.finished_all.emit()
-            return
-        except OSError as e:
-            self.log_signal.emit(self._i18n.t('status.output_err', err=str(e)))
-            self.finished_all.emit()
-            return
+            self._batch_tier_key = ""
 
-        try:
-            profile = get_system_profile()
-        except Exception:
-            profile = None
-
-        kind = JobKind.VIDEO if self.mode == 'video' else JobKind.AUDIO
-        job = JobDescriptor(kind=kind, file_count=max(1, self.queue.total), settings=self.settings, profile=profile)
-        slots = compute_slots(self.app_settings, job)
-        self.batch_progress_signal.emit(0, max(1, self.queue.total))
-
-        if slots <= 1:
-            while self.is_running and not self.queue.is_stopped():
-                file_path = self.queue.take_next()
-                if file_path is None:
-                    break
-                self.file_started_signal.emit(file_path)
-                idx = self.queue.completed
-                path, ok, msg, pipeline_key, rename_collision = self._convert_one(
-                    ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), 1, emit_progress=True,
-                )
-                if pipeline_key:
-                    self.pipeline_signal.emit(pipeline_key)
-                self._finish_file(path, ok, msg, rename_collision=rename_collision)
-        else:
-            self.log_signal.emit(self._i18n.t('status.parallel', n=slots))
-            pool = ThreadPoolExecutor(max_workers=slots)
-            self._executor = pool
-            active_futures: dict = {}
             try:
+                ffmpeg_cmd = self.get_ffmpeg_path()
+            except FFmpegNotFoundError:
+                self.log_signal.emit(self._i18n.t('status.ffmpeg_missing'))
+                return
+
+            try:
+                ensure_writable_dir(self.output_dir)
+            except OutputDirError as e:
+                self.log_signal.emit(self._i18n.t(e.code, path=e.path))
+                return
+            except OSError as e:
+                self.log_signal.emit(self._i18n.t('status.output_err', err=str(e)))
+                return
+
+            try:
+                profile = get_system_profile()
+            except Exception:
+                profile = None
+
+            kind = JobKind.VIDEO if self.mode == 'video' else JobKind.AUDIO
+            job = JobDescriptor(kind=kind, file_count=max(1, self.queue.total), settings=self.settings, profile=profile)
+            slots = compute_slots(self.app_settings, job)
+            self.batch_progress_signal.emit(0, max(1, self.queue.total))
+
+            if slots <= 1:
                 while self.is_running and not self.queue.is_stopped():
-                    while len(active_futures) < slots:
-                        file_path = self.queue.take_next()
-                        if file_path is None:
-                            break
-                        self.file_started_signal.emit(file_path)
-                        idx = self.queue.completed + len(active_futures)
-                        fut = pool.submit(
-                            self._convert_one,
-                            ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), slots, False,
-                        )
-                        active_futures[fut] = file_path
+                    file_path = self.queue.take_next()
+                    if file_path is None:
+                        break
+                    self.file_started_signal.emit(file_path)
+                    idx = self.queue.completed
+                    path, ok, msg, pipeline_key, rename_collision = self._convert_one(
+                        ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), 1, emit_progress=True,
+                    )
+                    if pipeline_key:
+                        self.pipeline_signal.emit(pipeline_key)
+                    self._finish_file(path, ok, msg, rename_collision=rename_collision)
+            else:
+                self.log_signal.emit(self._i18n.t('status.parallel', n=slots))
+                pool = ThreadPoolExecutor(max_workers=slots)
+                self._executor = pool
+                active_futures: dict = {}
+                try:
+                    while self.is_running and not self.queue.is_stopped():
+                        while len(active_futures) < slots:
+                            file_path = self.queue.take_next()
+                            if file_path is None:
+                                break
+                            self.file_started_signal.emit(file_path)
+                            idx = self.queue.completed + len(active_futures)
+                            fut = pool.submit(
+                                self._convert_one,
+                                ffmpeg_cmd, profile, file_path, idx, max(1, self.queue.total), slots, False,
+                            )
+                            active_futures[fut] = file_path
 
-                    if not active_futures:
-                        if self.queue.pending_count() == 0:
-                            break
-                        self.msleep(50)
-                        continue
+                        if not active_futures:
+                            if self.queue.pending_count() == 0:
+                                break
+                            self.msleep(50)
+                            continue
 
-                    done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED, timeout=0.3)
-                    for fut in done:
-                        fp = active_futures.pop(fut)
-                        try:
-                            path, ok, msg, pipeline_key, rename_collision = fut.result()
-                        except Exception as exc:
-                            if self.queue.is_stopped():
-                                path, ok, msg, pipeline_key, rename_collision = fp, False, "stopped", None, False
-                            else:
-                                path, ok, msg, pipeline_key, rename_collision = fp, False, str(exc)[:80], None, False
-                        if pipeline_key:
-                            self.pipeline_signal.emit(pipeline_key)
-                        self._finish_file(path, ok, msg, rename_collision=rename_collision)
-            finally:
-                self._executor = None
-                pool.shutdown(wait=False, cancel_futures=True)
-
-        self.progress_signal.emit(100)
-        self.batch_progress_signal.emit(self.queue.completed, max(1, self.queue.total))
-        self.finished_all.emit()
+                        done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED, timeout=0.3)
+                        for fut in done:
+                            fp = active_futures.pop(fut)
+                            try:
+                                path, ok, msg, pipeline_key, rename_collision = fut.result()
+                            except Exception as exc:
+                                if self.queue.is_stopped():
+                                    path, ok, msg, pipeline_key, rename_collision = fp, False, "stopped", None, False
+                                else:
+                                    path, ok, msg, pipeline_key, rename_collision = fp, False, str(exc)[:80], None, False
+                            if pipeline_key:
+                                self.pipeline_signal.emit(pipeline_key)
+                            self._finish_file(path, ok, msg, rename_collision=rename_collision)
+                finally:
+                    self._executor = None
+                    pool.shutdown(wait=False, cancel_futures=True)
+        except Exception as exc:
+            logging.error("Media worker run failed: %s", exc, exc_info=True)
+            self.log_signal.emit(self._i18n.t('status.file_fail', name="batch", err=str(exc)[:80]))
+        finally:
+            self.progress_signal.emit(100)
+            self.batch_progress_signal.emit(self.queue.completed, max(1, self.queue.total))
+            self.finished_all.emit()
 
     def _terminate_process(self, proc=None):
         targets = [proc] if proc else []

@@ -59,3 +59,14 @@ class ConversionTaskQueue:
     def pending_count(self) -> int:
         with self._lock:
             return len(self._pending)
+
+    def discard_pending(self, path: str) -> bool:
+        """Remove a path from the pending queue (e.g. user removed row while converting)."""
+        with self._lock:
+            try:
+                self._pending.remove(path)
+                if self._submitted_total > self._completed:
+                    self._submitted_total -= 1
+                return True
+            except ValueError:
+                return False

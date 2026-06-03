@@ -142,8 +142,16 @@ class GalaxyWindow(QMainWindow):
                 w.apply_ui_preferences(self.settings)
         if hasattr(self, "about_page"):
             self.about_page.refresh_content()
-        self.set_pipeline_badge()
+        if not self._any_base_page_busy():
+            self.set_pipeline_badge()
         apply_layout_direction(self, self.i18n.is_rtl())
+
+    def _any_base_page_busy(self) -> bool:
+        for i in range(self.stack.count()):
+            w = self.stack.widget(i)
+            if isinstance(w, BasePage) and w.is_busy():
+                return True
+        return False
 
     def navigate_to_page(self, index: int):
         if index < 0 or index >= self.stack.count():
@@ -292,6 +300,13 @@ class GalaxyWindow(QMainWindow):
         self.lbl_path.setToolTip(self.output_dir)
 
     def change_output(self):
+        if self._any_base_page_busy():
+            QMessageBox.warning(
+                self,
+                self.i18n.t('dlg.output_err'),
+                self.i18n.t('status.cannot_clear_running'),
+            )
+            return
         d = QFileDialog.getExistingDirectory(self, self.i18n.t('dlg.output_dir'), self.output_dir)
         if d:
             try:
@@ -313,12 +328,26 @@ class GalaxyWindow(QMainWindow):
 
     def closeEvent(self, event):
         logging.info("Initiating PySide6 graceful cleanup...")
+        app = QApplication.instance()
         for i in range(self.stack.count()):
             widget = self.stack.widget(i)
-            if hasattr(widget, 'worker') and widget.worker and widget.worker.isRunning():
+            if isinstance(widget, BasePage) and widget.is_busy():
+                try:
+                    widget.stop_process()
+                    if widget.worker:
+                        widget.worker.wait(5000)
+                    if app:
+                        app.processEvents()
+                except Exception as e:
+                    logging.error(f"Error stopping worker: {e}")
+                if widget.is_busy():
+                    widget.force_reset_conversion_ui()
+            elif hasattr(widget, 'worker') and widget.worker and widget.worker.isRunning():
                 try:
                     widget.worker.stop()
                     widget.worker.wait(5000)
+                    if app:
+                        app.processEvents()
                 except Exception as e:
                     logging.error(f"Error stopping worker: {e}")
         event.accept()

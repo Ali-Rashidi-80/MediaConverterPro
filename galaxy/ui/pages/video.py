@@ -182,7 +182,7 @@ class VideoPage(BasePage):
         self._sync_pipeline_hint()
 
     def _sync_pipeline_hint(self, *_):
-        if self.worker and self.worker.isRunning():
+        if self._is_converting():
             return
         try:
             profile = self._profile()
