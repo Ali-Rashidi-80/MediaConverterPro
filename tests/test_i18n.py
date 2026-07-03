@@ -6,6 +6,8 @@ from galaxy_i18n import STRINGS, I18n
 UI_STATUS_KEYS = (
     "status.prev_worker_busy",
     "status.cannot_clear_running",
+    "status.rerun_all",
+    "btn.start_rerun_tip",
 )
 
 WORKER_KEYS = (

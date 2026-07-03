@@ -26,6 +26,25 @@ def test_change_output_blocked_while_converting(qtbot, galaxy_window, monkeypatc
 
 
 @pytest.mark.ui
+def test_change_output_blocked_while_starting(qtbot, galaxy_window, monkeypatch):
+    called = {"dir": False}
+
+    def fake_dialog(*_args, **_kwargs):
+        called["dir"] = True
+        return ""
+
+    monkeypatch.setattr(
+        "galaxy.ui.main_window.QFileDialog.getExistingDirectory",
+        fake_dialog,
+    )
+    page: ImagePage = galaxy_window.stack.widget(0)
+    page._starting_conversion = True
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    galaxy_window.change_output()
+    assert called["dir"] is False
+
+
+@pytest.mark.ui
 def test_any_base_page_busy_includes_starting(qtbot, galaxy_window):
     page: ImagePage = galaxy_window.stack.widget(0)
     page._starting_conversion = True

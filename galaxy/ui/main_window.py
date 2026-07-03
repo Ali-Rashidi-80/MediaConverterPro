@@ -342,12 +342,4 @@ class GalaxyWindow(QMainWindow):
                     logging.error(f"Error stopping worker: {e}")
                 if widget.is_busy():
                     widget.force_reset_conversion_ui()
-            elif hasattr(widget, 'worker') and widget.worker and widget.worker.isRunning():
-                try:
-                    widget.worker.stop()
-                    widget.worker.wait(5000)
-                    if app:
-                        app.processEvents()
-                except Exception as e:
-                    logging.error(f"Error stopping worker: {e}")
         event.accept()

@@ -247,6 +247,27 @@ class BasePage(QWidget):
         ]
         return self._task_queue.append(to_add) if to_add else []
 
+    def _all_rows_success(self) -> bool:
+        return bool(self.file_paths) and all(
+            self._row_status_key(i) == "success" for i in range(len(self.file_paths))
+        )
+
+    def _collect_run_paths(self) -> tuple[list[str], bool]:
+        """Paths for the next batch.
+
+        Non-success rows run as usual. When every row is already success, Start means
+        re-convert the full list with current settings (format/quality changes, etc.).
+        """
+        if not self.file_paths:
+            return [], False
+        needs_work: list[str] = []
+        for i, path in enumerate(self.file_paths):
+            if self._row_status_key(i) != "success":
+                needs_work.append(path)
+        if needs_work:
+            return needs_work, False
+        return list(self.file_paths), True
+
     def _row_status_key(self, row: int) -> str:
         item = self.table_widget.item(row, 3)
         if not item:
@@ -309,7 +330,8 @@ class BasePage(QWidget):
             self.btn_run.setText(self.tr('btn.start'))
             self.btn_stop.setEnabled(False)
             if has_files:
-                set_tip(self.btn_run, self.tr('btn.start_tip'))
+                tip_key = 'btn.start_rerun_tip' if self._all_rows_success() else 'btn.start_tip'
+                set_tip(self.btn_run, self.tr(tip_key))
             else:
                 set_tip(self.btn_run, self.tr('btn.start_disabled_tip'))
             set_tip(self.btn_stop, self.tr('btn.stop_tip'))
@@ -339,6 +361,8 @@ class BasePage(QWidget):
         set_tip(self.settings_group, self.tr('settings.output_group_tip'))
         if self._is_converting():
             self.lbl_local_status.setText(self.tr('status.converting'))
+        elif self._starting_conversion:
+            pass
         elif self.file_paths:
             self.lbl_local_status.setText(self.tr('status.list_count', n=len(self.file_paths)))
         else:
@@ -381,9 +405,9 @@ class BasePage(QWidget):
         self.drop_zone.setVisible(not has_files)
         self.table_widget.setVisible(has_files)
         self.lbl_files_section.setVisible(has_files)
-        if has_files and not self._is_converting():
+        if has_files and not self.is_busy():
             self.lbl_local_status.setText(self.tr('status.list_count', n=len(self.file_paths)))
-        elif not has_files and not self._is_converting():
+        elif not has_files and not self.is_busy():
             self.lbl_local_status.setText(self.tr('status.ready'))
         self._sync_action_buttons()
 
@@ -504,7 +528,7 @@ class BasePage(QWidget):
         self._refresh_stats()
 
     def clear_list(self):
-        if self._is_converting():
+        if self.is_busy():
             self.lbl_local_status.setText(self.tr('status.cannot_clear_running'))
             return
         self.table_widget.setRowCount(0)
@@ -633,10 +657,7 @@ class BasePage(QWidget):
             self._user_stopped = False
             self._stop_pending = False
 
-            run_paths: list[str] = []
-            for i, path in enumerate(self.file_paths):
-                if self._row_status_key(i) != "success":
-                    run_paths.append(path)
+            run_paths, is_rerun_all = self._collect_run_paths()
             if not run_paths:
                 self.show_msg(self.tr('dlg.no_files'), self.tr('dlg.no_work_left'), QMessageBox.Icon.Information)
                 return
@@ -661,17 +682,18 @@ class BasePage(QWidget):
             else:
                 self._footer_encoder = self.tr('footer.enc_cpu')
 
-            self.worker.progress_signal.connect(self._on_worker_progress)
-            self.worker.log_signal.connect(self.update_local_log)
-            self.worker.file_status_signal.connect(self.update_file_status)
-            self.worker.file_status_signal.connect(self._track_file_result)
-            self.worker.file_started_signal.connect(self._mark_file_working)
-            self.worker.finished_all.connect(self.on_finished)
-            self.worker.finished.connect(self._on_worker_thread_exited)
+            _queued = Qt.ConnectionType.QueuedConnection
+            self.worker.progress_signal.connect(self._on_worker_progress, _queued)
+            self.worker.log_signal.connect(self.update_local_log, _queued)
+            self.worker.file_status_signal.connect(self.update_file_status, _queued)
+            self.worker.file_status_signal.connect(self._track_file_result, _queued)
+            self.worker.file_started_signal.connect(self._mark_file_working, _queued)
+            self.worker.finished_all.connect(self.on_finished, _queued)
+            self.worker.finished.connect(self._on_worker_thread_exited, _queued)
             if hasattr(self.worker, 'pipeline_signal'):
-                self.worker.pipeline_signal.connect(self._on_pipeline_update)
+                self.worker.pipeline_signal.connect(self._on_pipeline_update, _queued)
             if hasattr(self.worker, 'batch_progress_signal'):
-                self.worker.batch_progress_signal.connect(self._on_batch_progress)
+                self.worker.batch_progress_signal.connect(self._on_batch_progress, _queued)
 
             if self.parent_window and hasattr(self.parent_window, 'set_conversion_badge'):
                 self.parent_window.set_conversion_badge(
@@ -691,7 +713,10 @@ class BasePage(QWidget):
                 self._sync_file_paths_into_task_queue()
                 self.toggle_inputs(False)
                 self._sync_action_buttons()
-                self.lbl_local_status.setText(self.tr('status.converting'))
+                if is_rerun_all:
+                    self.lbl_local_status.setText(self.tr('status.rerun_all', n=len(run_paths)))
+                else:
+                    self.lbl_local_status.setText(self.tr('status.converting'))
                 self.worker.start()
                 self._sync_action_buttons()
             except Exception:

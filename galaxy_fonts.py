@@ -63,6 +63,13 @@ def register_bundled_fonts():
     if _fonts_registered:
         return bool(_loaded_families)
     _fonts_registered = True
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return False
+    if QApplication.instance() is None:
+        logging.debug("Skipping bundled font registration: no QApplication instance")
+        return False
     fonts_dir = fonts_directory()
     patterns = [
         os.path.join(fonts_dir, "*.ttf"),
@@ -71,7 +78,11 @@ def register_bundled_fonts():
     loaded = 0
     for pattern in patterns:
         for path in sorted(glob.glob(pattern)):
-            fid = QFontDatabase.addApplicationFont(path)
+            try:
+                fid = QFontDatabase.addApplicationFont(path)
+            except Exception as exc:
+                logging.warning("Font load skipped for %s: %s", path, exc)
+                continue
             if fid >= 0:
                 loaded += 1
                 _loaded_families.update(QFontDatabase.applicationFontFamilies(fid))

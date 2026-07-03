@@ -40,6 +40,28 @@ def test_ui_font_stack_fa_and_en(monkeypatch):
     assert "sans-serif" in en_stack
 
 
+def test_register_bundled_fonts_skips_without_qapp(monkeypatch):
+    prev_registered = galaxy_fonts._fonts_registered
+    prev_loaded = set(galaxy_fonts._loaded_families)
+    try:
+        monkeypatch.setattr(galaxy_fonts, "_fonts_registered", False)
+        monkeypatch.setattr(galaxy_fonts, "_loaded_families", set())
+        monkeypatch.setattr("PySide6.QtWidgets.QApplication.instance", lambda: None)
+        assert galaxy_fonts.register_bundled_fonts() is False
+        assert galaxy_fonts.register_bundled_fonts() is False
+    finally:
+        galaxy_fonts._fonts_registered = prev_registered
+        galaxy_fonts._loaded_families = prev_loaded
+
+
+@pytest.mark.ui
+def test_register_bundled_fonts_with_qapp(qapp, monkeypatch):
+    monkeypatch.setattr(galaxy_fonts, "_fonts_registered", False)
+    monkeypatch.setattr(galaxy_fonts, "_loaded_families", set())
+    result = galaxy_fonts.register_bundled_fonts()
+    assert isinstance(result, bool)
+
+
 @pytest.mark.ui
 def test_make_qfont_returns_valid_font(qapp):
     with patch.object(galaxy_fonts, "register_bundled_fonts", return_value=False):

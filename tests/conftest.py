@@ -19,6 +19,37 @@ from galaxy.services.hw_probe import BackendCaps, ParallelCaps, SystemProfile
 from galaxy.services.settings import SettingsManager
 
 
+def _shutdown_galaxy_window(win, qapp) -> None:
+    """Stop workers and reset page state before destroying the window (avoids Qt teardown crashes)."""
+    from galaxy.ui.base_page import BasePage
+
+    for i in range(win.stack.count()):
+        page = win.stack.widget(i)
+        if not isinstance(page, BasePage):
+            continue
+        if page.is_busy():
+            try:
+                page.stop_process()
+            except Exception:
+                pass
+        worker = page.worker
+        if worker is not None:
+            if worker.isRunning():
+                try:
+                    worker.stop()
+                except Exception:
+                    pass
+                if not worker.wait(5000):
+                    worker.terminate()
+                    worker.wait(1000)
+        page.force_reset_conversion_ui()
+    win.close()
+    win.deleteLater()
+    if qapp:
+        qapp.processEvents()
+        qapp.processEvents()
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "integration: real FFmpeg / slow tests")
     config.addinivalue_line("markers", "ui: Qt widget interaction tests")
@@ -38,7 +69,17 @@ def qapp():
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    app.setQuitOnLastWindowClosed(False)
     yield app
+
+
+@pytest.fixture(autouse=True)
+def _qt_process_events_after_ui(request, qapp):
+    yield
+    if "ui" not in request.keywords:
+        return
+    if qapp:
+        qapp.processEvents()
 
 
 @pytest.fixture
@@ -112,7 +153,7 @@ def galaxy_window(qapp, monkeypatch, tmp_path):
 
     win = GalaxyWindow()
     yield win
-    win.close()
+    _shutdown_galaxy_window(win, qapp)
 
 
 @pytest.fixture
