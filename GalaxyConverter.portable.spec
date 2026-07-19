@@ -82,7 +82,7 @@ pyz = PYZ(a.pure, cipher=block_cipher)
 UPX_SKIP = [
     'ffmpeg.exe', 'ffmpeg',
     'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Widgets.dll', 'Qt6Network.dll',
-    'python3.dll', 'python314.dll',
+    'python3.dll', 'python311.dll', 'python314.dll',
     'vcruntime140.dll', 'vcruntime140_1.dll',
     'libcrypto', 'libssl',
 ]

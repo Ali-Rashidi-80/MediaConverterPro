@@ -1,94 +1,87 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
-color 0B
+color 0E
 
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
 
 echo ===================================================
-echo   Galaxy Media Pro — Build System
-echo   Bundle: EXE + FFmpeg + Icon (onedir)
+echo   Galaxy Media Pro — Portable EXE (default build)
+echo   Single file: FFmpeg + fonts + icon embedded
 echo ===================================================
 echo.
 
-echo [1/7] Python...
+if not exist "galaxy_ultimate.py" ( echo [ERROR] galaxy_ultimate.py missing & pause & exit /b 1 )
+if not exist "ffmpeg.exe" ( echo [ERROR] ffmpeg.exe missing & pause & exit /b 1 )
+if not exist "GalaxyConverter.portable.spec" ( echo [ERROR] spec missing & pause & exit /b 1 )
+
+echo [1/6] Python...
 python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python not found.
-    pause & exit /b 1
-)
+if errorlevel 1 ( echo [ERROR] Python not found. & pause & exit /b 1 )
 python --version
 echo.
 
-echo [2/7] Dependencies...
+echo [2/6] Dependencies...
 python -m pip install --upgrade pip -q
 python -m pip install pyside6 pyinstaller pillow pillow-heif -q
-if errorlevel 1 ( echo [ERROR] pip failed. & pause & exit /b 1 )
-echo OK
-echo.
+if errorlevel 1 ( echo [ERROR] pip failed & pause & exit /b 1 )
 
-echo [3/7] Required files...
-set "ERR=0"
-if not exist "galaxy_ultimate.py" ( echo [ERROR] galaxy_ultimate.py missing & set "ERR=1" )
-if not exist "GalaxyConverter.spec" ( echo [ERROR] GalaxyConverter.spec missing & set "ERR=1" )
-if not exist "ffmpeg.exe" ( echo [ERROR] ffmpeg.exe missing — place it in project root & set "ERR=1" )
-if not exist "icon.ico" ( echo [WARN] icon.ico missing )
-if "%ERR%"=="1" ( pause & exit /b 1 )
-echo ffmpeg.exe OK
-echo.
+echo [3/6] UPX (optional compression)...
+set "UPX_DIR="
+if exist "tools\upx\upx.exe" set "UPX_DIR=%ROOT%tools\upx"
+if exist "C:\Program Files\upx-5.0.2-win64\upx.exe" set "UPX_DIR=C:\Program Files\upx-5.0.2-win64"
+where upx >nul 2>&1
+if not errorlevel 1 if not defined UPX_DIR (
+    for /f "delims=" %%U in ('where upx 2^>nul') do set "UPX_DIR=%%~dpU"
+    if defined UPX_DIR set "UPX_DIR=!UPX_DIR:~0,-1!"
+)
+if not defined UPX_DIR (
+    echo UPX not found — downloading to tools\upx...
+    if not exist "tools" mkdir "tools"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$u='https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip';" ^
+        "$z='%ROOT%tools\upx.zip'; $d='%ROOT%tools\upx_tmp';" ^
+        "Invoke-WebRequest -Uri $u -OutFile $z -UseBasicParsing;" ^
+        "Expand-Archive -Path $z -DestinationPath $d -Force;" ^
+        "$exe=Get-ChildItem $d -Recurse -Filter upx.exe | Select-Object -First 1;" ^
+        "New-Item -ItemType Directory -Force -Path '%ROOT%tools\upx' | Out-Null;" ^
+        "Copy-Item $exe.FullName '%ROOT%tools\upx\upx.exe' -Force;" ^
+        "Remove-Item $z -Force; Remove-Item $d -Recurse -Force"
+    if exist "tools\upx\upx.exe" set "UPX_DIR=%ROOT%tools\upx"
+)
+if defined UPX_DIR ( echo UPX: !UPX_DIR! ) else ( echo [WARN] UPX unavailable — building without extra compression )
 
-echo [4/7] Clean old build...
-if exist "build" rmdir /s /q "build"
-if exist "dist" rmdir /s /q "dist"
-echo.
+echo [4/6] Clean portable artifacts...
+if exist "build\GalaxyMediaPro_Portable" rmdir /s /q "build\GalaxyMediaPro_Portable"
+if exist "dist\GalaxyMediaPro_Portable.exe" del /f /q "dist\GalaxyMediaPro_Portable.exe"
 
-echo [5/7] PyInstaller onedir build (bundled tools)...
-python -m PyInstaller --noconfirm --clean GalaxyConverter.spec
-if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
-echo.
+echo [5/6] PyInstaller onefile...
+set "UPX_ARG="
+if defined UPX_DIR set "UPX_ARG=--upx-dir \"!UPX_DIR!\""
 
-echo [6/7] Release package...
-set "SRC=%ROOT%dist\GalaxyConverter"
-set "REL=%ROOT%dist\GalaxyConverter_Release"
-if not exist "%SRC%\GalaxyConverter.exe" (
-    echo [ERROR] GalaxyConverter.exe not found in dist
+python -m PyInstaller --noconfirm --clean !UPX_ARG! GalaxyConverter.portable.spec
+if errorlevel 1 ( echo [ERROR] Build failed & pause & exit /b 1 )
+
+echo [6/6] Verify...
+if not exist "dist\GalaxyMediaPro_Portable.exe" (
+    echo [ERROR] dist\GalaxyMediaPro_Portable.exe not found
     pause & exit /b 1
 )
-if exist "%REL%" rmdir /s /q "%REL%"
-mkdir "%REL%"
-xcopy /E /I /Y "%SRC%\*" "%REL%\" >nul
 
-echo Galaxy Media Pro > "%REL%\README.txt"
-echo. >> "%REL%\README.txt"
-echo Run: GalaxyConverter.exe >> "%REL%\README.txt"
-echo Bundled: _internal\ffmpeg.exe >> "%REL%\README.txt"
-echo Output: Desktop\GalaxyOutput >> "%REL%\README.txt"
-echo. >> "%REL%\README.txt"
-echo Do NOT delete the _internal folder. >> "%REL%\README.txt"
-
-(
-echo @echo off
-echo cd /d "%%~dp0"
-echo start "" "%%~dp0GalaxyConverter.exe"
-) > "%REL%\Run_GalaxyConverter.bat"
-
+for %%A in ("dist\GalaxyMediaPro_Portable.exe") do set "SZ=%%~zA"
+set /a "SZMB=!SZ!/1048576"
 echo.
-
-echo [7/7] Verify bundle...
-if exist "%REL%\_internal\ffmpeg.exe" (
-    echo [OK] ffmpeg.exe bundled in _internal
-) else if exist "%REL%\ffmpeg.exe" (
-    echo [OK] ffmpeg.exe bundled
-) else (
-    echo [WARN] ffmpeg NOT found in release
-)
-if exist "%REL%\GalaxyConverter.exe" echo [OK] GalaxyConverter.exe
+echo ===================================================
+echo   SUCCESS — Portable EXE ready
+echo   File: dist\GalaxyMediaPro_Portable.exe
+echo   Size: ~!SZMB! MB
 echo.
-echo DONE
-echo   Folder: dist\GalaxyConverter\
-echo   Release: dist\GalaxyConverter_Release\
-echo   Zip the Release folder for distribution.
+echo   Copy this ONE file anywhere (USB, Desktop...)
+echo   FFmpeg is embedded — no install needed.
+echo   First launch may take 10-20 sec (extract cache).
+echo.
+echo   Onedir build: run build_onedir.bat
 echo ===================================================
 pause
 endlocal

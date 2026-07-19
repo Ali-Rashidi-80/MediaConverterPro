@@ -321,8 +321,6 @@ def test_audio_page_shares_busy_semantics(qtbot, galaxy_window):
 
 @pytest.mark.ui
 def test_video_page_shares_busy_semantics(qtbot, galaxy_window):
-    from galaxy.ui.pages.video import VideoPage
-
     page: VideoPage = galaxy_window.stack.widget(1)
     page._conversion_running = True
     assert page.is_busy()
