@@ -25,24 +25,8 @@ def _shutdown_galaxy_window(win, qapp) -> None:
 
     for i in range(win.stack.count()):
         page = win.stack.widget(i)
-        if not isinstance(page, BasePage):
-            continue
-        if page.is_busy():
-            try:
-                page.stop_process()
-            except Exception:
-                pass
-        worker = page.worker
-        if worker is not None:
-            if worker.isRunning():
-                try:
-                    worker.stop()
-                except Exception:
-                    pass
-                if not worker.wait(5000):
-                    worker.terminate()
-                    worker.wait(1000)
-        page.force_reset_conversion_ui()
+        if isinstance(page, BasePage):
+            page.shutdown_conversion_workers()
     win.close()
     win.deleteLater()
     if qapp:
@@ -71,6 +55,77 @@ def qapp():
         app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     yield app
+
+
+@pytest.fixture
+def qtbot(qapp):
+    """Prefer real pytest-qt; fall back to a small local helper if the plugin is missing."""
+    try:
+        from pytestqt.qtbot import QtBot
+
+        yield QtBot(qapp)
+        return
+    except ImportError:
+        pass
+
+    import time
+    from contextlib import contextmanager
+
+    class _LocalQtBot:
+        def __init__(self, app):
+            self._app = app
+
+        def wait(self, ms: int) -> None:
+            deadline = time.perf_counter() + (ms / 1000.0)
+            while time.perf_counter() < deadline:
+                self._app.processEvents()
+                time.sleep(0.005)
+
+        def waitUntil(self, callback, timeout: int = 5000) -> None:
+            deadline = time.perf_counter() + (timeout / 1000.0)
+            while time.perf_counter() < deadline:
+                self._app.processEvents()
+                try:
+                    if callback():
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.01)
+            raise TimeoutError(f"waitUntil timed out after {timeout}ms")
+
+        @contextmanager
+        def waitSignal(self, signal, timeout: int = 5000):
+            from PySide6.QtCore import QEventLoop, QTimer
+
+            loop = QEventLoop()
+            result = {"ok": False}
+
+            def _ok(*_a):
+                result["ok"] = True
+                loop.quit()
+
+            signal.connect(_ok)
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(loop.quit)
+            timer.start(timeout)
+            try:
+                yield result
+            finally:
+                if not result["ok"]:
+                    loop.exec()
+                try:
+                    signal.disconnect(_ok)
+                except (RuntimeError, TypeError):
+                    pass
+            if not result["ok"]:
+                raise TimeoutError(f"waitSignal timed out after {timeout}ms")
+
+        def addWidget(self, widget) -> None:
+            widget.show()
+            self._app.processEvents()
+
+    yield _LocalQtBot(qapp)
 
 
 @pytest.fixture(autouse=True)

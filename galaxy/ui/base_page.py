@@ -1,4 +1,5 @@
 """Base conversion page shared by image/video/audio tabs."""
+import logging
 import os
 from datetime import datetime
 
@@ -589,7 +590,7 @@ class BasePage(QWidget):
 
     def get_settings(self): return {}
 
-    def _disconnect_worker(self):
+    def _disconnect_worker(self, *, keep_thread_finished: bool = False):
         if not self.worker:
             return
         for attr, slot in (
@@ -602,6 +603,8 @@ class BasePage(QWidget):
             ('pipeline_signal', self._on_pipeline_update),
             ('batch_progress_signal', self._on_batch_progress),
         ):
+            if keep_thread_finished and attr == 'finished':
+                continue
             signal = getattr(self.worker, attr, None)
             if signal is None:
                 continue
@@ -618,6 +621,49 @@ class BasePage(QWidget):
         """Run full finish if the thread ends before the finished_all slot (Qt event order)."""
         if self._conversion_running:
             self.on_finished()
+            return
+        # UI already finished; drop the QThread only after it has fully stopped.
+        try:
+            if self.worker is not None:
+                self.worker.finished.disconnect(self._on_worker_thread_exited)
+        except (RuntimeError, TypeError):
+            pass
+        self.worker = None
+        self._task_queue = None
+
+    def shutdown_conversion_workers(self, wait_ms: int = 5000, terminate_ms: int = 1000) -> None:
+        """Stop and join this page's worker before window teardown.
+
+        Joins a still-running QThread even when UI flags are already cleared
+        (race after on_finished). Call this instead of force_reset alone on exit.
+        Never drops the worker ref while the thread is still running.
+        """
+        try:
+            if self.is_busy():
+                self.stop_process()
+        except Exception:
+            logging.exception("shutdown: stop_process failed")
+        worker = self.worker
+        if worker is not None:
+            try:
+                if worker.isRunning():
+                    stop_fn = getattr(worker, "stop", None)
+                    if callable(stop_fn):
+                        try:
+                            stop_fn()
+                        except Exception:
+                            logging.exception("shutdown: worker.stop failed")
+                    if not worker.wait(wait_ms):
+                        worker.terminate()
+                        worker.wait(terminate_ms)
+                    if worker.isRunning():
+                        logging.warning(
+                            "shutdown: worker still running after terminate; retaining QThread ref",
+                        )
+            except Exception:
+                logging.exception("shutdown: worker join failed")
+        # force_reset clears UI flags; it will not null a still-running worker.
+        self.force_reset_conversion_ui()
 
     def start_process(self):
         if self._is_start_locked():
@@ -735,13 +781,23 @@ class BasePage(QWidget):
                 self._sync_action_buttons()
 
     def force_reset_conversion_ui(self) -> None:
-        """Hard-reset action bar state (app exit / orphaned flags)."""
+        """Hard-reset action bar state (app exit / orphaned flags).
+
+        Does not drop ``self.worker`` while the QThread is still running — clearing
+        that ref would allow GC to destroy a live thread (Qt fatal).
+        """
         self._conversion_running = False
         self._starting_conversion = False
         self._stop_pending = False
         self._user_stopped = False
-        self._disconnect_worker()
-        self.worker = None
+        worker = self.worker
+        still_running = bool(worker is not None and worker.isRunning())
+        if still_running:
+            # Keep finished→clear path; drop only UI signal slots.
+            self._disconnect_worker(keep_thread_finished=True)
+        else:
+            self._disconnect_worker()
+            self.worker = None
         self._task_queue = None
         self.toggle_inputs(True)
         self._sync_action_buttons()
@@ -821,8 +877,17 @@ class BasePage(QWidget):
         stopped = self._user_stopped
         self._conversion_running = False
         self._stop_pending = False
-        self._disconnect_worker()
-        self.worker = None
+        # Keep finished→_on_worker_thread_exited so we can clear the ref after join.
+        self._disconnect_worker(keep_thread_finished=True)
+        # Keep worker until the QThread has fully stopped so closeEvent / GC can wait
+        # (Qt crashes if a running QThread is destroyed). Cleared in _on_worker_thread_exited.
+        worker = self.worker
+        if worker is not None and not worker.isRunning():
+            try:
+                worker.finished.disconnect(self._on_worker_thread_exited)
+            except (RuntimeError, TypeError):
+                pass
+            self.worker = None
         self._task_queue = None
         try:
             if stopped:
@@ -893,4 +958,3 @@ class BasePage(QWidget):
         lang = getattr(self.parent_window, 'settings', {}).get('language', 'fa')
         msg.setStyleSheet(build_stylesheet(theme, font_key, lang))
         msg.exec()
-

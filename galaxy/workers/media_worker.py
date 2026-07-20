@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import threading
+import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from PySide6.QtCore import QThread, Signal
@@ -240,7 +241,9 @@ class MediaWorker(QThread):
 
         try:
             if uses_gpu:
-                if not GlobalGpuSemaphore.acquire(timeout=300):
+                if not self._acquire_gpu_interruptible(timeout=300.0):
+                    if not self.is_running:
+                        return file_path, False, "stopped", None, False
                     uses_gpu = False
                     self.log_signal.emit(self._i18n.t('status.gpu_queue_timeout'))
                 else:
@@ -390,6 +393,17 @@ class MediaWorker(QThread):
             self.progress_signal.emit(100)
             self.batch_progress_signal.emit(self.queue.completed, max(1, self.queue.total))
             self.finished_all.emit()
+
+    def _acquire_gpu_interruptible(self, timeout: float = 300.0, slice_timeout: float = 0.25) -> bool:
+        """Acquire the GPU semaphore in short slices so stop() can interrupt the wait."""
+        deadline = time.monotonic() + max(0.0, timeout)
+        while self.is_running:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            if GlobalGpuSemaphore.acquire(timeout=min(slice_timeout, remaining)):
+                return True
+        return False
 
     def _terminate_process(self, proc=None):
         targets = [proc] if proc else []

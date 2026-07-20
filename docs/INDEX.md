@@ -29,7 +29,8 @@
 
 ```powershell
 python galaxy_ultimate.py              # اجرا
-.\build_portable.bat                   # portable EXE
+.\build.bat                            # portable EXE (پیش‌فرض)
+.\build_onedir.bat                     # نسخه پوشه‌ای
 python tools/qa_full.py --full         # QA gate
 python tools/verify_ffmpeg_caps.py     # بررسی FFmpeg
 ```

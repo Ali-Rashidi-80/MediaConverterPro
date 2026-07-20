@@ -331,15 +331,14 @@ class GalaxyWindow(QMainWindow):
         app = QApplication.instance()
         for i in range(self.stack.count()):
             widget = self.stack.widget(i)
-            if isinstance(widget, BasePage) and widget.is_busy():
-                try:
-                    widget.stop_process()
-                    if widget.worker:
-                        widget.worker.wait(5000)
-                    if app:
-                        app.processEvents()
-                except Exception as e:
-                    logging.error(f"Error stopping worker: {e}")
-                if widget.is_busy():
-                    widget.force_reset_conversion_ui()
+            if not isinstance(widget, BasePage):
+                continue
+            try:
+                # Always join a still-running QThread, even when UI flags are idle
+                # (race after on_finished clears _conversion_running before thread exit).
+                widget.shutdown_conversion_workers()
+                if app:
+                    app.processEvents()
+            except Exception as e:
+                logging.error(f"Error stopping worker: {e}")
         event.accept()

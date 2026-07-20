@@ -16,7 +16,7 @@ All notable changes to **Galaxy Media Pro** are documented here.
 - Bilingual UI (FA RTL / EN LTR) with Vazirmatn fonts
 - Footer performance badge during conversion
 - Portable single EXE with bundled FFmpeg
-- QA suite: 142+ pytest tests · `tools/qa_full.py` · GitHub Actions
+- QA suite: **247** pytest tests · `tools/qa_full.py` · GitHub Actions
 - Help: GPU FAQ · HW encoder matrix · GPL notice · Developer card (Ali Rashidi)
 - `LICENSE` · `.gitattributes` · improved `.gitignore`
 
@@ -27,9 +27,15 @@ All notable changes to **Galaxy Media Pro** are documented here.
 - EN mode Persian leaks in FFmpeg/output-dir errors
 - Combo boxes in ScrollArea (FormComboBox)
 - Settings retranslate preserving user values
+- Start/Stop button stuck after finish, cancel, or list edits (UI flag vs `QThread.isRunning`)
+- Re-convert after all-success; queue files added during starting/converting
+- `closeEvent` joins still-running workers even when UI flags are idle (shutdown race)
+- GPU semaphore acquire interruptible by Stop (no multi-minute block)
+- Image stop mid-task reports cancelled instead of late success
 
 ### Changed
 - Portable output: `dist/GalaxyMediaPro_Portable.exe`
+- `build.bat` default target is portable onefile (`build_onedir.bat` for folder build)
 - `pyproject.toml` version aligned to `3.0.0`
 
 ### Removed from active codebase

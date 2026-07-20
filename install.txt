@@ -12,7 +12,8 @@ Quick run:
   python galaxy_ultimate.py
 
 Portable build:
-  build_portable.bat  →  dist\GalaxyConverter_Portable.exe
+  build.bat / build_portable.bat  →  dist\GalaxyMediaPro_Portable.exe
+  build_onedir.bat                →  onedir folder under dist\
 
 QA:
   pip install -r requirements-dev.txt

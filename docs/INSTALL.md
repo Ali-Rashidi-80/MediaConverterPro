@@ -42,20 +42,11 @@ python galaxy_ultimate.py
 
 ---
 
-## ۲. ساخت EXE — نسخه پوشه‌ای (onedir)
+## ۲. ساخت EXE — Portable (پیش‌فرض)
 
 ```powershell
 .\build.bat
-```
-
-**خروجی:** `dist\GalaxyConverter\`  
-شامل `GalaxyConverter.exe` + `_internal\ffmpeg.exe`
-
----
-
-## ۳. ساخت Portable — یک فایل
-
-```powershell
+# یا
 .\build_portable.bat
 ```
 
@@ -66,6 +57,16 @@ python galaxy_ultimate.py
 | FFmpeg | داخل EXE باندل است |
 | اولین اجرا | ۱۰–۲۰ ثانیه (استخراج cache) |
 | UPX | خودکار از `tools\upx` یا دانلود |
+
+---
+
+## ۳. ساخت نسخه پوشه‌ای (onedir)
+
+```powershell
+.\build_onedir.bat
+```
+
+**خروجی:** پوشهٔ onedir در `dist\` (شامل exe + `_internal\ffmpeg.exe`)
 
 ---
 

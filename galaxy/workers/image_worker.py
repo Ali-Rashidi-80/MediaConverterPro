@@ -65,6 +65,10 @@ class ImageWorker(QThread):
             return
         self.file_started_signal.emit(file_path)
         path, ok, msg = convert_image_task(file_path, self.output_dir, settings_copy)
+        # Cooperative stop: if the user cancelled mid-task, do not report success.
+        if not self.is_running or self.queue.is_stopped():
+            self._handle_result(file_path, False, "stopped")
+            return
         self._handle_result(path, ok, msg)
 
     def run(self):

@@ -1,13 +1,14 @@
 """Conversion action-bar state (start/stop) must not depend on QThread.isRunning()."""
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 from galaxy.ui.pages.image import ImagePage
 from galaxy.ui.pages.video import VideoPage
 from galaxy.workers.task_queue import ConversionTaskQueue
-from PySide6.QtCore import QThread
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import QMessageBox
 
 
@@ -441,3 +442,174 @@ def test_footer_badge_not_cleared_when_sibling_still_converting(
     image.on_finished()
     qtbot.wait(20)
     assert galaxy_window.lbl_perf.text() != idle
+
+
+@pytest.mark.ui
+def test_start_unlocks_when_output_dir_not_writable(qtbot, galaxy_window, tmp_path, monkeypatch):
+    from galaxy.core.exceptions import OutputDirError
+
+    page: ImagePage = galaxy_window.stack.widget(0)
+    src = tmp_path / "a.jpg"
+    src.write_bytes(b"\xff\xd8\xff")
+    page.process_new_files([str(src)])
+    monkeypatch.setattr(
+        "galaxy.ui.base_page.ensure_writable_dir",
+        MagicMock(side_effect=OutputDirError("err.output_no_write", str(tmp_path))),
+    )
+    shown = []
+
+    def capture_msg(title, text, icon):
+        shown.append((title, text))
+
+    monkeypatch.setattr(page, "show_msg", capture_msg)
+    page.start_process()
+    qtbot.wait(20)
+    assert not page.is_busy()
+    assert page.btn_run.isEnabled()
+    assert shown
+
+
+@pytest.mark.ui
+def test_prev_worker_busy_blocks_restart_and_unlocks(qtbot, galaxy_window, tmp_path, monkeypatch):
+    page: ImagePage = galaxy_window.stack.widget(0)
+    src = tmp_path / "a.jpg"
+    src.write_bytes(b"\xff\xd8\xff")
+    page.process_new_files([str(src)])
+    mock_worker = MagicMock()
+    mock_worker.isRunning.return_value = True
+    mock_worker.wait.return_value = False  # still running after wait
+    page.worker = mock_worker
+    shown = []
+    monkeypatch.setattr(page, "show_msg", lambda *a, **k: shown.append(a))
+    page.start_process()
+    qtbot.wait(20)
+    mock_worker.stop.assert_called()
+    assert not page.is_busy()
+    assert page.btn_run.isEnabled()
+    assert shown
+    assert page.tr("status.prev_worker_busy") in shown[0]
+
+
+@pytest.mark.ui
+def test_drop_event_queues_file_while_converting(qtbot, galaxy_window, tmp_path):
+    from PySide6.QtCore import QMimeData, QUrl
+
+    page: ImagePage = galaxy_window.stack.widget(0)
+    existing = tmp_path / "a.jpg"
+    existing.write_bytes(b"\xff\xd8\xff")
+    page.process_new_files([str(existing)])
+    page._conversion_running = True
+    page._task_queue = ConversionTaskQueue([str(existing)])
+    dropped = tmp_path / "b.jpg"
+    dropped.write_bytes(b"\xff\xd8\xff")
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(dropped))])
+
+    class _Drop:
+        def __init__(self):
+            self._mime = mime
+            self.accepted = False
+
+        def mimeData(self):
+            return self._mime
+
+        def acceptProposedAction(self):
+            self.accepted = True
+
+        def ignore(self):
+            self.accepted = False
+
+    drop = _Drop()
+    page.dropEvent(drop)
+    qtbot.wait(10)
+    dropped_norm = os.path.normpath(str(dropped))
+    assert any(os.path.normpath(p) == dropped_norm for p in page.file_paths)
+    assert page._row_status_key(1) == "queued"
+    assert page._task_queue.pending_count() >= 1
+    assert drop.accepted
+
+
+@pytest.mark.ui
+def test_add_folder_queues_while_converting(qtbot, galaxy_window, tmp_path, monkeypatch):
+    page: ImagePage = galaxy_window.stack.widget(0)
+    existing = tmp_path / "a.jpg"
+    existing.write_bytes(b"\xff\xd8\xff")
+    page.process_new_files([str(existing)])
+    page._conversion_running = True
+    page._task_queue = ConversionTaskQueue([str(existing)])
+    folder = tmp_path / "batch"
+    folder.mkdir()
+    extra = folder / "c.jpg"
+    extra.write_bytes(b"\xff\xd8\xff")
+    monkeypatch.setattr(
+        "galaxy.ui.base_page.QFileDialog.getExistingDirectory",
+        lambda *a, **k: str(folder),
+    )
+    page.add_folder(page.formats)
+    qtbot.wait(10)
+    assert str(extra) in page.file_paths
+    assert page._row_status_key(page.file_paths.index(str(extra))) == "queued"
+
+
+@pytest.mark.ui
+def test_video_and_audio_share_start_lock(qtbot, galaxy_window):
+    from galaxy.ui.pages.audio import AudioPage
+
+    video: VideoPage = galaxy_window.stack.widget(1)
+    audio: AudioPage = galaxy_window.stack.widget(2)
+    video._starting_conversion = True
+    audio._conversion_running = True
+    assert video.is_busy()
+    assert audio.is_busy()
+    assert video._is_start_locked()
+    assert audio._is_start_locked()
+
+
+@pytest.mark.ui
+def test_worker_signals_use_queued_connection(qtbot, galaxy_window, tmp_path, monkeypatch):
+    page: ImagePage = galaxy_window.stack.widget(0)
+    src = tmp_path / "a.jpg"
+    src.write_bytes(b"\xff\xd8\xff")
+    page.process_new_files([str(src)])
+    connections = []
+
+    class _Worker:
+        def __init__(self, *a, **k):
+            self.progress_signal = MagicMock()
+            self.log_signal = MagicMock()
+            self.file_status_signal = MagicMock()
+            self.file_started_signal = MagicMock()
+            self.finished_all = MagicMock()
+            self.finished = MagicMock()
+            for sig in (
+                self.progress_signal,
+                self.log_signal,
+                self.file_status_signal,
+                self.file_started_signal,
+                self.finished_all,
+                self.finished,
+            ):
+                def _connect(*args, _s=sig, **kwargs):
+                    connections.append(args)
+
+                sig.connect = _connect
+
+        def start(self):
+            pass
+
+        def isRunning(self):
+            return False
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr("galaxy.ui.base_page.ImageWorker", _Worker)
+    monkeypatch.setattr(page, "show_msg", lambda *a, **k: None)
+    page.start_process()
+    qtbot.wait(20)
+    queued_args = [
+        c for c in connections
+        if len(c) >= 2 and c[-1] == Qt.ConnectionType.QueuedConnection
+    ]
+    assert queued_args, f"expected QueuedConnection connects, got {connections!r}"
+    page.force_reset_conversion_ui()

@@ -72,8 +72,9 @@ python -m bandit -r galaxy tools -c pyproject.toml
 ## Build
 
 ```powershell
-.\build.bat              # onedir
-.\build_portable.bat     # onefile
+.\build.bat              # portable onefile (default)
+.\build_portable.bat     # alias → build.bat
+.\build_onedir.bat       # folder (onedir) build
 ```
 
 ---

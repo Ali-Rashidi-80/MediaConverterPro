@@ -2,7 +2,7 @@
 
 ---
 
-## استرategی (۳ لایه)
+## استراتژی (۳ لایه)
 
 | لایه | ابزار | هدف |
 |------|--------|-----|
@@ -15,7 +15,7 @@
 ## اجرای تست
 
 ```powershell
-# همه (142+)
+# همه (247)
 python -m pytest tests -q
 
 # فقط unit (سریع)
@@ -64,12 +64,18 @@ python tools/qa_full.py --full   # + integration اجباری
 ## Manual QA (پیش از release)
 
 - [ ] Cold start FA + EN
+- [ ] Start → finish → Start again (re-convert / rerun)
+- [ ] Stop → Start again؛ Stop disables until finished
+- [ ] Add / drop / folder حین starting یا converting
+- [ ] Clear list مسدود وقتی busy
+- [ ] بستن پنجره درست پس از finish (thread join حتی اگر UI idle)
 - [ ] Video tab — pipeline hint
 - [ ] ۲ تب GPU همزمان
 - [ ] Stop در parallel video (<5s)
 - [ ] Footer badge حین تبدیل
 - [ ] Settings Pro — NVENC gray-out بدون NVIDIA
 - [ ] Help — FAQ GPU + GPL + matrix
+- [ ] Task Manager kill وسط تبدیل
 - [ ] Portable EXE روی سیستم تمیز
 
 ---

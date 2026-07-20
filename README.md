@@ -90,7 +90,7 @@ MediaConverter/
 ├── galaxy_i18n.py          # ترجمه FA/EN
 ├── galaxy_fonts.py         # فونت Vazirmatn + typography
 ├── galaxy_ultimate.py      # entry point (PyInstaller)
-├── tests/                  # 142+ تست pytest
+├── tests/                  # 247 تست pytest
 ├── tools/                  # verify, benchmark, qa_full, bootstrap
 ├── docs/                   # مستندات کامل
 ├── fonts/                  # فونت‌های باندل
@@ -184,7 +184,7 @@ flowchart TB
 ```powershell
 python tools/qa_full.py          # gate روزانه (unit)
 python tools/qa_full.py --full   # + integration FFmpeg
-python -m pytest tests -q        # 142+ tests · ~70% coverage
+python -m pytest tests -q        # 247 tests · ~70% coverage
 ```
 
 | Gate | ابزار |

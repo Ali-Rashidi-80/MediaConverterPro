@@ -27,6 +27,17 @@ def _sequential_image_worker(monkeypatch) -> None:
     )
 
 
+def _wait_idle(qtbot, page: ImagePage, timeout: int = 30000) -> None:
+    """Wait until UI unlocks and the QThread ref is cleared (honest finish race)."""
+    qtbot.waitUntil(lambda: not page.is_busy(), timeout=timeout)
+    qtbot.waitUntil(
+        lambda: page.worker is None or not page.worker.isRunning(),
+        timeout=min(10000, timeout),
+    )
+    if page.worker is not None and not page.worker.isRunning():
+        page._on_worker_thread_exited()
+
+
 @pytest.mark.ui
 def test_image_full_cycle_unlocks_start_and_writes_output(
     qtbot, galaxy_window, sample_jpg, monkeypatch,
@@ -37,7 +48,7 @@ def test_image_full_cycle_unlocks_start_and_writes_output(
 
     with patch.object(QMessageBox, "exec", return_value=QMessageBox.StandardButton.Ok):
         page.start_process()
-        qtbot.waitUntil(lambda: not page.is_busy(), timeout=30000)
+        _wait_idle(qtbot, page, timeout=30000)
 
     assert not page._conversion_running
     assert not page._starting_conversion
@@ -88,7 +99,7 @@ def test_stop_during_conversion_restores_start_button(
     original = image_task_mod.convert_image_task
 
     def slow_convert(*args, **kwargs):
-        time.sleep(0.4)
+        time.sleep(0.8)
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -100,6 +111,7 @@ def test_stop_during_conversion_restores_start_button(
     page.process_new_files([str(sample_jpg)])
     page.start_process()
     qtbot.waitUntil(lambda: page._conversion_running, timeout=5000)
+    qtbot.waitUntil(lambda: page._row_status_key(0) == "working", timeout=5000)
     page.stop_process()
     qtbot.waitUntil(lambda: not page.is_busy(), timeout=20000)
 
