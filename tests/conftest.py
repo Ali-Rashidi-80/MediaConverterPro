@@ -62,12 +62,17 @@ def qapp():
 
 
 @pytest.fixture
-def qtbot(qapp):
-    """Prefer real pytest-qt; fall back to a small local helper if the plugin is missing."""
+def qtbot(qapp, request):
+    """Prefer real pytest-qt; fall back to a small local helper if the plugin is missing.
+
+    pytest-qt's QtBot expects the pytest ``request`` fixture (``.config`` / ``.node``),
+    not a bare ``QApplication`` — passing ``qapp`` breaks CI where pytest-qt is installed.
+    """
     try:
         from pytestqt.qtbot import QtBot
 
-        yield QtBot(qapp)
+        bot = QtBot(request)
+        yield bot
         return
     except ImportError:
         pass
