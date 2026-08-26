@@ -76,11 +76,11 @@ def main() -> int:
     checks.append(bandit)
 
     unit = _run([
-        py, "-m", "pytest", "tests", "-q", "--tb=no",
+        py, "-m", "pytest", "tests", "-q", "--tb=short",
         "-m", "not integration",
         "--cov=galaxy", "--cov=galaxy_i18n",
         "--cov-fail-under=65",
-    ])
+    ], timeout=900)
     unit["name"] = "pytest_unit"
     checks.append(unit)
 
@@ -117,6 +117,18 @@ def main() -> int:
         ),
     }
     print(json.dumps(report, indent=2, ensure_ascii=False))
+    # Surface tails for CI logs when the gate fails (JSON summary alone is not enough).
+    if blocking:
+        print("\n===== BLOCKING FAILURE DETAILS =====", flush=True)
+        for c in blocking:
+            name = c.get("name", "?")
+            print(f"\n--- {name} exit={c.get('exit_code')} ---", flush=True)
+            err = (c.get("stderr_tail") or "").strip()
+            out = (c.get("stdout_tail") or "").strip()
+            if err:
+                print(err, flush=True)
+            if out:
+                print(out, flush=True)
     return 0 if not blocking else 1
 
 

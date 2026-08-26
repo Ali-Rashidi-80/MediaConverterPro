@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Headless CI / agents: set before any Qt import creates a QApplication.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_OPENGL", "software")
+
 import pytest
 from PIL import Image
 from PySide6.QtWidgets import QApplication

@@ -11,6 +11,11 @@ jobs:
   qa-windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      # Headless-safe Qt for pytest-qt / PySide6 on GitHub-hosted runners
+      QT_QPA_PLATFORM: offscreen
+      QT_OPENGL: software
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
 
