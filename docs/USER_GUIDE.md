@@ -1,8 +1,137 @@
-# راهنمای کاربر — Galaxy Media Pro
+# User Guide — Galaxy Media Pro
+
+**Language:** [English](#english) · [فارسی](#فارسی)
 
 ---
 
-## شروع در ۳ مرحله
+## English
+
+### Start in 3 steps
+
+```
+1. Add files        →  Drag & Drop or “Choose files”
+2. Review settings  →  Format & quality (defaults are fine)
+3. Start conversion →  Bottom-of-page Start button
+```
+
+### While converting
+
+| Action | Behavior |
+|--------|----------|
+| **⏹ Stop** | Red button — cancels FFmpeg/jobs; unfinished rows show cancelled |
+| **➕ Add files** | File / folder / drag & drop — queued and auto-converted |
+| **Remove from list** | Only queued or completed — in-progress rows stay |
+| **Clear all** | Only when conversion is stopped |
+
+Output is saved to the **output folder** (footer).
+
+---
+
+### Tabs
+
+| Tab | Use |
+|-----|-----|
+| **Image** | Format convert · resize · rotate · grayscale |
+| **Video** | MP4/MKV · preset · GPU · trim |
+| **Audio** | MP3/WAV/FLAC · normalize · trim |
+| **Settings** | Theme · language · Pro mode · Performance |
+| **Help** | FAQ · system status · GPL |
+
+---
+
+### Simple vs Pro
+
+| | Simple | Pro |
+|---|--------|-----|
+| Main settings | ✅ | ✅ |
+| Extra per-page settings | Hidden | Open |
+| Performance (GPU/parallel) | — | ✅ |
+
+**Settings → Interface mode → Pro**
+
+---
+
+### Video presets
+
+| Preset | Use |
+|--------|-----|
+| **Remux only** | Container change only — fastest |
+| **Mobile** | 720p · smaller size |
+| **YouTube** | 1080p · higher quality |
+| **Original** | No extra preset |
+
+---
+
+### GPU acceleration (Pro)
+
+**Settings → Performance → Accelerator**
+
+| Option | Meaning |
+|--------|---------|
+| Auto | Detect NVIDIA / AMD / Intel |
+| CPU only | Always CPU |
+| NVIDIA / AMD / Intel | Force backend |
+
+**Pipeline badge** (above video page):
+
+| Badge | Meaning |
+|-------|---------|
+| Full GPU | decode + filter + encode on GPU |
+| Encode GPU | encode on GPU — filters on CPU |
+| Remux | stream copy |
+| CPU | full CPU |
+
+---
+
+### Parallelism (Pro)
+
+**Settings → Processing mode**
+
+| Mode | Behavior |
+|------|----------|
+| Sequential | One file at a time |
+| Parallel | Max throughput |
+| Smart | Automatic suggestion (recommended) |
+
+---
+
+### Footer during conversion
+
+```
+🔄 NVENC p4 · 2/5 · ⚡ Encode GPU
+     │         │         └── tier
+     │         └── progress
+     └── encoder
+```
+
+---
+
+### Quick FAQ
+
+**Video won’t convert?**  
+→ Help → FFmpeg must show Ready.
+
+**GPU failed?**  
+→ Continues on CPU — log may show “GPU failed”.
+
+**Where is the output?**  
+→ Footer storage path · after convert “Open folder”.
+
+**Too slow?**  
+→ Remux only · Smart parallel · Auto accel.
+
+---
+
+### Language
+
+**Settings → Language → فارسی / English**  
+Applies immediately.
+
+---
+
+## فارسی
+
+### شروع در ۳ مرحله
 
 ```
 ۱. فایل اضافه کنید     →  Drag & Drop یا «انتخاب فایل»
@@ -14,16 +143,14 @@
 
 | عمل | رفتار |
 |-----|--------|
-| **⏹ توقف** | دکمه قرمز پایین صفحه — FFmpeg/کارها قطع می‌شود؛ فایل‌های ناتمام «لغو شد» |
-| **➕ افزودن فایل** | «انتخاب فایل» / پوشه / Drag & Drop — فایل به **صف** اضافه می‌شود و خودکار تبدیل می‌شود |
-| **حذف از لیست** | فقط فایل‌های در صف یا تکمیل‌شده — فایل «در حال کار» حذف نمی‌شود |
+| **⏹ توقف** | دکمه قرمز — FFmpeg/کارها قطع؛ ناتمام‌ها «لغو شد» |
+| **➕ افزودن فایل** | فایل / پوشه / Drag & Drop — به **صف** و تبدیل خودکار |
+| **حذف از لیست** | فقط صف یا تکمیل‌شده — «در حال کار» حذف نمی‌شود |
 | **پاک کردن همه** | فقط وقتی تبدیل متوقف است |
 
 خروجی در **پوشه خروجی** (footer) ذخیره می‌شود.
 
----
-
-## تب‌ها
+### تب‌ها
 
 | تب | کاربرد |
 |----|--------|
@@ -33,96 +160,21 @@
 | **تنظیمات** | تم · زبان · Pro mode · Performance |
 | **راهنما** | FAQ · وضعیت سیستم · GPL |
 
----
+### Simple vs Pro
 
-## حالت Simple vs Pro
+**Settings → Interface mode → Pro** برای Performance (GPU/parallel).
 
-| | Simple | Pro |
-|---|--------|-----|
-| تنظیمات اصلی | ✅ | ✅ |
-| تنظیمات بیشتر (هر صفحه) | مخفی | باز |
-| Performance (GPU/parallel) | — | ✅ |
+### FAQ سریع
 
-**Settings → Interface mode → Pro**
+**ویدیو تبدیل نمی‌شود؟** → Help → FFmpeg باید «آماده» باشد.  
+**GPU خطا داد؟** → خودکار CPU.  
+**خروجی کجاست؟** → footer مسیر ذخیره‌سازی.  
+**کند است؟** → Remux only · Smart parallel · Auto accel.
 
----
+### زبان
 
-## presetهای ویدیو
-
-| preset | کاربرد |
-|--------|--------|
-| **Remux only** | فقط تغییر container — سریع‌ترین |
-| **Mobile** | 720p · حجم کم |
-| **YouTube** | 1080p · کیفیت بالا |
-| **Original** | بدون preset اضافی |
+**Settings → Language → فارسی / English**
 
 ---
 
-## شتاب GPU (Pro)
-
-**Settings → Performance → Accelerator**
-
-| گزینه | معنی |
-|--------|------|
-| Auto | تشخیص NVIDIA / AMD / Intel |
-| CPU only | همیشه CPU |
-| NVIDIA / AMD / Intel | اجبار backend |
-
-**نشانه pipeline** (بالای صفحه ویدیو):
-
-| نشان | معنی |
-|------|------|
-| Full GPU | decode + filter + encode روی GPU |
-| Encode GPU | فقط encode GPU — فیلتر CPU |
-| Remux | copy stream |
-| CPU | کامل CPU |
-
----
-
-## موازی‌سازی (Pro)
-
-**Settings → Processing mode**
-
-| حالت | رفتار |
-|------|--------|
-| Sequential | یک فایل |
-| Parallel | حداکثر سرعت |
-| Smart | پیشنهاد خودکار (توصیه) |
-
----
-
-## Footer در حین تبدیل
-
-```
-🔄 NVENC p4 · 2/5 · ⚡ Encode GPU
-     │         │         └── tier
-     │         └── پیشرفت
-     └── encoder
-```
-
----
-
-## FAQ سریع
-
-**ویدیو تبدیل نمی‌شود؟**  
-→ Help → FFmpeg باید «آماده» باشد.
-
-**GPU خطا داد؟**  
-→ خودکار CPU ادامه می‌دهد — در log «GPU ناموفق» می‌بینید.
-
-**خروجی کجاست؟**  
-→ footer «مسیر ذخیره‌سازی» · بعد از تبدیل «باز کردن پوشه».
-
-**کند است؟**  
-→ Remux only · Smart parallel · Auto accel.
-
----
-
-## زبان
-
-**Settings → Language → فارسی / English**  
-تغییر بلافاصله اعمال می‌شود.
-
----
-
-[← فهرست](INDEX.md) · [نصب](INSTALL.md) · [FFmpeg](FFMPEG_BUNDLE.md)
+[← Docs index](INDEX.md) · [Install](INSTALL.md) · [FFmpeg](FFMPEG_BUNDLE.md)

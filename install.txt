@@ -1,11 +1,17 @@
 Galaxy Media Pro 3.0 — Quick install pointer
 =================================================
 
-Full documentation moved to:
+Default language of documentation: English
+Persian README: README.fa.md
 
-  README.md           — overview & quick start
+Full documentation:
+
+  README.md           — overview & quick start (English default)
+  README.fa.md        — overview (Persian)
   docs/INSTALL.md     — complete install & build guide
   docs/INDEX.md       — all documentation
+  CONTRIBUTING.md     — contribution policy
+  SECURITY.md         — vulnerability reporting
 
 Quick run:
   pip install -r requirements.txt
