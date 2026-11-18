@@ -40,3 +40,16 @@ archive/legacy-phase5/
 tools/upx/
 tools/upx.zip
 tools/upx_tmp/
+
+# Analysis & AI tooling outputs
+graphify-out/
+.forensic_sessions/
+.mcpdom_projects/
+.mcpdom_recordings/
+
+# Subproject & general tooling ignores
+node_modules/
+**/target/
+.eslintcache
+*.tsbuildinfo
+

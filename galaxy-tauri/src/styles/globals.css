@@ -1,0 +1,249 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('../assets/fonts/Vazir-Regular.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  ascent-override: 105%;
+  descent-override: 35%;
+}
+
+@font-face {
+  font-family: 'Tahoma';
+  src: url('../assets/fonts/Tahoma-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tahoma';
+  src: url('../assets/fonts/Tahoma-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Segoe UI';
+  src: url('../assets/fonts/SegoeUI-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Segoe UI';
+  src: url('../assets/fonts/SegoeUI-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Consolas';
+  src: url('../assets/fonts/Consolas-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+html[data-font-scale="small"] {
+  font-size: 14px;
+}
+
+html[data-font-scale="medium"] {
+  font-size: 16px;
+}
+
+html[data-font-scale="large"] {
+  font-size: 17.5px;
+}
+
+:root {
+  /* LIGHT STUDIO MODE */
+  --canvas-bg: #F8FAFC;
+  --surface-mica: rgba(241, 245, 249, 0.90);
+  --surface-card: rgba(255, 255, 255, 0.94);
+  --surface-card-hover: rgba(255, 255, 255, 0.99);
+  --surface-card-active: #FFFFFF;
+  --surface-input: #EDF2F7;
+  --surface-input-hover: #E2E8F0;
+  --surface-input-border: rgba(15, 23, 42, 0.14);
+
+  --border-specular: rgba(255, 255, 255, 0.92);
+  --border-subtle: rgba(15, 23, 42, 0.10);
+  --border-active: rgba(2, 132, 199, 0.55);
+
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-muted: #64748B;
+
+  --accent-primary: #0284C7;
+  --accent-success: #059669;
+  --accent-warning: #D97706;
+  --accent-danger: #E11D48;
+
+  --card-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.07), 0 2px 6px -1px rgba(15, 23, 42, 0.05);
+  --inner-glow: inset 0 1px 0 0 rgba(255, 255, 255, 0.92);
+}
+
+.dark {
+  /* DARK STUDIO MODE */
+  --canvas-bg: #070A10;
+  --surface-mica: rgba(15, 23, 42, 0.78);
+  --surface-card: rgba(22, 30, 49, 0.72);
+  --surface-card-hover: rgba(30, 41, 65, 0.88);
+  --surface-card-active: rgba(30, 41, 65, 0.96);
+  --surface-input: rgba(15, 23, 42, 0.68);
+  --surface-input-hover: rgba(30, 41, 65, 0.80);
+  --surface-input-border: rgba(255, 255, 255, 0.09);
+
+  --border-specular: rgba(255, 255, 255, 0.12);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-active: rgba(56, 189, 248, 0.55);
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+
+  --accent-primary: #38BDF8;
+  --accent-success: #34D399;
+  --accent-warning: #FBBF24;
+  --accent-danger: #FB7185;
+
+  --card-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.55), 0 4px 12px -2px rgba(0, 0, 0, 0.40);
+  --inner-glow: inset 0 1px 0 0 rgba(255, 255, 255, 0.10);
+}
+
+body {
+  background-color: var(--canvas-bg);
+  color: var(--text-primary);
+  font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+  line-height: 1.7;
+}
+
+[dir="rtl"] body {
+  font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+  line-height: 1.7;
+}
+
+[dir="ltr"] body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.font-mono,
+code,
+pre,
+kbd {
+  font-family: 'Consolas', ui-monospace, monospace;
+}
+
+/* Custom Studio Focus Ring */
+.focus-studio {
+  outline: none;
+}
+.focus-studio:focus-visible {
+  box-shadow: 0 0 0 2px var(--canvas-bg), 0 0 0 4px var(--accent-primary);
+}
+
+/* Native <dialog> Modal Styling */
+dialog {
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: auto;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+dialog::backdrop {
+  background: rgba(15, 23, 42, 0.50);
+  backdrop-filter: blur(6px);
+  animation: dialogBackdropFade 160ms ease-out forwards;
+}
+
+.dark dialog::backdrop {
+  background: rgba(2, 6, 23, 0.74);
+}
+
+dialog[open] {
+  animation: dialogPanelIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dialogBackdropFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialogPanelIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Scrollbar Utilities */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 9999px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.48);
+}
+
+/* Default Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

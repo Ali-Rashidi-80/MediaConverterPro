@@ -1,0 +1,53 @@
+# Node & Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+.turbo/
+*.tsbuildinfo
+
+# Environment & local config
+.env
+.env.local
+.env.*.local
+*.env
+
+# Tauri & Rust
+target/
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~
+
+# Temporary & runtime files
+*.tmp
+*.galaxy_tmp
+.galaxy_part_*
+*.bak
+*.crswap
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# QA & Test Artifacts
+playwright-report/
+test-results/
+coverage/
+.eslintcache
+.nyc_output/
